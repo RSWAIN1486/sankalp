@@ -61,19 +61,25 @@ Decisions/
 ```
 
 Writes are append-first. `remember:` captures go to `Inbox/`; chat turns go to `Sessions/`;
-profile edits and inferred traits go to `People/you.md`. Retrieval is lightweight keyword
-scoring for now.
+profile edits and inferred traits go to `People/you.md`. Deleting a chat session removes
+the JSON session and matching `Sessions/YYYY-MM-DD-<session-id>.md` Obsidian transcript.
+Retrieval is lightweight keyword scoring for now.
 
 When the user explicitly asks to search, check, retrieve, or find something in memory,
 `Agent.turn` routes the request through the `memory_search` tool before any model call.
+Before searching, the configured model rewrites the user request into a concise memory
+search query; if that rewrite is unavailable, Sankalp falls back to the raw user wording.
 The tool searches the configured Obsidian vault across knowledge folders, intentionally
 skipping `Sessions/` because that folder stores chat transcripts rather than promoted
-memory. Search scores note text plus folder and file names, logs the query, vault status,
-and matching snippets in `session.tool_calls`, then the agent summarizes the matched notes
-when the user asks a content question. If the user is only checking whether memory exists,
-the agent confirms yes or no, cites the matched paths, and asks what the user wants to
-inspect next. Normal chat still receives lightweight retrieved context without forcing a
-visible tool call, keeping everyday turns simple while making memory-audit requests explicit.
+memory. Search scores note text plus folder and file names, logs the rewritten query, the
+original user query, vault status, and matching snippets in `session.tool_calls`, then
+filters weak matches before giving evidence to a model. This keeps local models from being
+distracted by loosely related notes. For OpenAI-compatible local grounded-memory answers,
+Sankalp requests deterministic temperature-zero output. If the user is only checking whether
+memory exists, the agent confirms yes or no, cites the matched paths, and asks what the user
+wants to inspect next. Normal chat still receives lightweight retrieved context without
+forcing a visible tool call, keeping everyday turns simple while making memory-audit
+requests explicit.
 
 Tool routing is intentionally two-step. Cheap deterministic commands and regex checks run
 first for obvious intents such as `remember:` and "in my memory". If those do not select a

@@ -129,8 +129,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"session": session.compact(), "sessions": AGENT.sessions.list()})
             if parsed.path == "/api/session/delete":
                 body = self._body()
-                deleted = AGENT.sessions.delete(str(body.get("session_id") or ""))
-                return self._json({"deleted": deleted, "sessions": AGENT.sessions.list()})
+                session_id = str(body.get("session_id") or "")
+                deleted = AGENT.sessions.delete(session_id)
+                memory_deleted = AGENT.memory.delete_session_notes(session_id) if deleted else 0
+                return self._json({"deleted": deleted, "memory_deleted": memory_deleted, "sessions": AGENT.sessions.list()})
             if parsed.path == "/api/settings":
                 body = self._body()
                 settings = save_settings(body)

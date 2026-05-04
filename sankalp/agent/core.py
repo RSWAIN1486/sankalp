@@ -75,7 +75,8 @@ class Agent:
             return f"I could not save that memory: {result.output}"
 
         if self._is_memory_lookup_request(lowered):
-            result = self.tools.call("memory_search", query=content, limit=6)
+            search_query = self._memory_search_query(content, options)
+            result = self.tools.call("memory_search", query=search_query, original_query=content, limit=6)
             session.tool_calls.append(asdict(result))
             if result.status != "ok":
                 return f"I could not search memory: {result.output}"
@@ -129,7 +130,9 @@ class Agent:
         tool = selection.get("tool")
         arguments = dict(selection.get("arguments") or {})
         if tool == "memory_search":
-            result = self.tools.call("memory_search", query=str(arguments.get("query") or content), limit=6)
+            selected_query = str(arguments.get("query") or content)
+            search_query = self._memory_search_query(selected_query, options)
+            result = self.tools.call("memory_search", query=search_query, original_query=content, limit=6)
             session.tool_calls.append(asdict(result))
             if result.status != "ok":
                 return f"I could not search memory: {result.output}"
@@ -174,8 +177,17 @@ class Agent:
             },
         ]
 
+    def _memory_search_query(self, content: str, options: dict[str, Any]) -> str:
+        if hasattr(self.llm, "memory_search_query"):
+            query = self.llm.memory_search_query(content, options)
+            if query:
+                return query
+        return content
+
     def _is_memory_lookup_request(self, lowered: str) -> bool:
         if any(phrase in lowered for phrase in ["in my memory", "from my memory", "from memory", "search memory", "check memory"]):
+            return True
+        if re.search(r"\b(check|search|look for|find|retrieve)\s+(my|the|your)\s+memory\b", lowered):
             return True
         return bool(re.search(r"\b(do you see|find|retrieve|look for|search)\b.*\b(notes?|documentation|docs?|memory)\b", lowered))
 
@@ -222,11 +234,13 @@ class Agent:
             f"User request: {content}"
         )
         try:
+            answer_options = dict(options)
+            answer_options["response_mode"] = "grounded_memory_answer"
             result = self.llm.complete(
                 [{"role": "user", "content": prompt}],
                 memory_context,
                 None,
-                options,
+                answer_options,
                 [],
             )
             text = str(result.get("text") or "").strip()

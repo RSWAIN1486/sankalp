@@ -28,6 +28,20 @@ class MemoryTests(unittest.TestCase):
             self.assertIn("## User", text)
             self.assertIn("hello", text)
 
+    def test_delete_session_notes_removes_matching_transcripts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = ObsidianMemory(Path(tmp))
+            first = memory.append_session_turn("abc123abc123", "user", "hello")
+            second = memory.append_session_turn("abc123abc123", "assistant", "hi")
+            other = memory.append_session_turn("def456def456", "user", "keep")
+
+            deleted = memory.delete_session_notes("abc123abc123")
+
+            self.assertEqual(deleted, 1)
+            self.assertFalse(first.exists())
+            self.assertFalse(second.exists())
+            self.assertTrue(other.exists())
+
     def test_retrieve_searches_vault_names_and_skips_sessions(self):
         with tempfile.TemporaryDirectory() as tmp:
             vault = Path(tmp)
@@ -46,6 +60,25 @@ class MemoryTests(unittest.TestCase):
             self.assertEqual(paths[0], "Skills/system design/Stripe Fraud Detection - Radar.md")
             self.assertNotIn("Sessions/2026-05-04-chat.md", paths)
             self.assertIn("Radar rules", hits[0].text)
+
+    def test_retrieve_filters_weak_distractors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            (vault / "system design").mkdir(parents=True)
+            (vault / "LLM").mkdir()
+            (vault / "system design" / "Stripe Fraud Detection - Radar.md").write_text(
+                "Stripe fraud detection used XGBoost and a DNN before Shield NeXt.",
+                encoding="utf-8",
+            )
+            (vault / "LLM" / "Open Source LLM Architectures.md").write_text(
+                "Algorithm notes about unrelated model architectures.",
+                encoding="utf-8",
+            )
+
+            hits = ObsidianMemory(vault).retrieve("what was the algorithm used for fraud detection in stripe")
+            paths = [hit.path for hit in hits]
+
+            self.assertEqual(paths, ["system design/Stripe Fraud Detection - Radar.md"])
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ class FakeLLM:
     def select_tool(self, message, tools, options=None):
         return None
 
+    def memory_search_query(self, message, options=None):
+        return None
+
 
 class AgentTests(unittest.TestCase):
     def test_remember_routes_to_memory_tool(self):
@@ -117,6 +120,23 @@ class AgentTests(unittest.TestCase):
 
             self.assertIn("Skills/system design/Stripe Fraud Detection - Radar.md", hit_paths)
             self.assertNotIn("Sessions/2026-05-04-chat.md", hit_paths)
+
+    def test_memory_lookup_uses_llm_rewritten_query(self):
+        class QueryLLM(FakeLLM):
+            def memory_search_query(self, message, options=None):
+                return "stripe fraud detection radar"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            memory.capture("Stripe Radar fraud detection note.", source="test")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), QueryLLM())
+
+            result = agent.turn(None, "can you check my memory about that payments risk thing")
+            tool_input = result["tool_calls"][0]["input"]
+
+            self.assertEqual(tool_input["query"], "stripe fraud detection radar")
+            self.assertEqual(tool_input["original_query"], "can you check my memory about that payments risk thing")
 
     def test_llm_tool_selection_none_falls_back_to_chat(self):
         class RouterLLM(FakeLLM):

@@ -62,12 +62,12 @@ class ToolRegistry:
         path = self.memory.capture(text, source=source)
         return ToolResult.run("memory_remember", {"text": text, "source": source}, {"path": str(path)}, started_at=started)
 
-    def memory_search(self, query: str, limit: int = 6) -> ToolResult:
+    def memory_search(self, query: str, limit: int = 6, original_query: str | None = None) -> ToolResult:
         started = time.time()
         hits = self.memory.retrieve(query, limit=limit)
         return ToolResult.run(
             "memory_search",
-            {"query": query, "limit": limit},
+            {"query": query, "original_query": original_query or query, "limit": limit},
             {
                 "status": self.memory.status(),
                 "hits": [hit.__dict__ for hit in hits],

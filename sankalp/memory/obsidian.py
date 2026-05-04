@@ -123,6 +123,23 @@ class ObsidianMemory:
             handle.write(f"\n## {role.title()} - {now:%H:%M:%S}\n\n{content.strip()}\n")
         return path
 
+    def delete_session_notes(self, session_id: str) -> int:
+        if not re.fullmatch(r"[a-f0-9]{12}", session_id):
+            return 0
+        root = self.vault / "Sessions"
+        try:
+            paths = list(root.glob(f"*-{session_id}.md"))
+        except Exception:
+            return 0
+        deleted = 0
+        for path in paths:
+            try:
+                path.unlink()
+                deleted += 1
+            except Exception:
+                continue
+        return deleted
+
     def list_recent(self, limit: int = 20) -> list[dict[str, str]]:
         root = self.content_root()
         try:
@@ -140,7 +157,7 @@ class ObsidianMemory:
         return result
 
     def retrieve(self, query: str, limit: int = 6) -> list[MemoryHit]:
-        terms = {term.lower() for term in re.findall(r"[a-zA-Z0-9_]{3,}", query)}
+        terms = self._query_terms(query)
         if not terms:
             return []
         hits: list[MemoryHit] = []
@@ -162,7 +179,7 @@ class ObsidianMemory:
             snippet = self._best_snippet(text, terms)
             hits.append(MemoryHit(display_path, path.stem, snippet, score, self._note_text_for_context(text)))
         hits.sort(key=lambda hit: hit.score, reverse=True)
-        return hits[:limit]
+        return self._focused_hits(hits, limit)
 
     def content_root(self) -> Path:
         if not self.workspace:
@@ -275,6 +292,26 @@ class ObsidianMemory:
 
     def _note_text_for_context(self, text: str, limit: int = 4000) -> str:
         return text.strip()[:limit]
+
+    def _query_terms(self, query: str) -> set[str]:
+        stopwords = {
+            "about", "around", "check", "from", "memory", "notes", "note", "documentation",
+            "document", "used", "using", "what", "which", "where", "when", "why", "how",
+            "does", "did", "the", "for", "can", "you", "any", "was", "were", "there",
+        }
+        return {
+            term.lower()
+            for term in re.findall(r"[a-zA-Z0-9_]{3,}", query)
+            if term.lower() not in stopwords
+        }
+
+    def _focused_hits(self, hits: list[MemoryHit], limit: int) -> list[MemoryHit]:
+        if not hits:
+            return []
+        top_score = hits[0].score
+        threshold = max(2, int(top_score * 0.35))
+        focused = [hit for hit in hits if hit.score >= threshold]
+        return focused[:limit]
 
     def _display_path(self, path: Path) -> str:
         try:

@@ -14,6 +14,36 @@ from sankalp.settings import load_settings
 
 
 class LLMAdapter:
+    def memory_search_query(self, message: str, options: dict[str, Any] | None = None) -> str | None:
+        settings = self._settings_with_options(options or {})
+        provider = settings.get("provider", "local")
+        prompt = (
+            "Rewrite this user request into a concise Obsidian memory search query.\n"
+            "Return only JSON with this shape: {\"query\":\"...\"}.\n"
+            "Keep important entities, product names, project names, concepts, metrics, methods, and dates.\n"
+            "Remove conversational words and instructions to the assistant.\n"
+            "Do not answer the user. Do not add facts not present in the request.\n\n"
+            f"User request: {message.strip()[:2000]}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            if provider == "local_openai":
+                result = self._local_openai(settings, messages, "")
+            elif provider == "gemini":
+                result = self._gemini(settings, messages, "")
+            elif provider == "codex":
+                result = self._codex(settings, messages, "")
+            elif provider == "openai":
+                api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return None
+                result = self._openai(api_key, settings, messages, "", None)
+            else:
+                return None
+        except Exception:
+            return None
+        return self._parse_memory_search_query(str(result.get("text") or ""))
+
     def select_tool(self, message: str, tools: list[dict[str, Any]], options: dict[str, Any] | None = None) -> dict[str, Any] | None:
         settings = self._settings_with_options(options or {})
         provider = settings.get("provider", "local")
@@ -186,6 +216,9 @@ class LLMAdapter:
         effort = str(options.get("reasoning_effort") or "").strip()
         if effort and effort != "auto":
             settings["reasoning_effort"] = effort
+        response_mode = str(options.get("response_mode") or "").strip()
+        if response_mode:
+            settings["response_mode"] = response_mode
         return settings
 
     def _chat_messages(self, messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -378,6 +411,8 @@ class LLMAdapter:
             "messages": self._chat_messages(messages, memory_context, attachments),
             "stream": False,
         }
+        if settings.get("response_mode") == "grounded_memory_answer":
+            payload["temperature"] = 0
         request = urllib.request.Request(
             f"{base_url}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
@@ -505,6 +540,25 @@ class LLMAdapter:
         if not isinstance(arguments, dict):
             arguments = {}
         return {"tool": tool, "arguments": arguments}
+
+    def _parse_memory_search_query(self, value: str) -> str | None:
+        text = value.strip()
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start:end + 1]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        query = str(data.get("query") or "").strip()
+        if len(query) < 3:
+            return None
+        return query[:300]
 
     def _fallback(self, messages: list[dict[str, str]], memory_context: str) -> str:
         latest = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")

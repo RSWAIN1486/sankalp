@@ -10,6 +10,7 @@
 - Auto-generated titles are capped to five words, and manual session renames are never
   overwritten.
 - Sessions can be renamed or deleted from the left rail.
+- Deleting a session also deletes its matching Obsidian transcript from `Sessions/`.
 - User messages can be edited and resent; Sankalp branches from that turn and drops later
   stale messages before generating a replacement response.
 - User messages expose copy and edit actions at the bottom-right of the bubble on hover.
@@ -51,8 +52,12 @@
 - `remember:` appends durable facts to the inbox.
 - Memory lookup searches the whole configured vault, skips `Sessions/`, and matches both
   note contents and folder/file names.
+- Memory lookup asks the configured model to rewrite the user request into a concise search
+  query before searching, then logs both the rewritten and original query.
 - Memory lookup response style follows the query: existence checks return yes/no plus
   source paths and a follow-up prompt; specific questions are answered from the notes.
+- Memory lookup filters weak matches before model answering, and local OpenAI-compatible
+  grounded answers use deterministic output to reduce drift.
 - Assistant messages that mention Obsidian `.md` note paths show open-note controls that
   launch the note through the same Obsidian open endpoint used by the Memory tab.
 
