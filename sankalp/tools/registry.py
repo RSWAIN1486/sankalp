@@ -45,6 +45,8 @@ class ToolRegistry:
     def call(self, name: str, **kwargs: Any) -> ToolResult:
         if name == "memory_remember":
             return self.memory_remember(**kwargs)
+        if name == "memory_search":
+            return self.memory_search(**kwargs)
         if name == "browser_fetch":
             return self.browser_fetch(**kwargs)
         if name == "file_read":
@@ -59,6 +61,19 @@ class ToolRegistry:
         started = time.time()
         path = self.memory.capture(text, source=source)
         return ToolResult.run("memory_remember", {"text": text, "source": source}, {"path": str(path)}, started_at=started)
+
+    def memory_search(self, query: str, limit: int = 6) -> ToolResult:
+        started = time.time()
+        hits = self.memory.retrieve(query, limit=limit)
+        return ToolResult.run(
+            "memory_search",
+            {"query": query, "limit": limit},
+            {
+                "status": self.memory.status(),
+                "hits": [hit.__dict__ for hit in hits],
+            },
+            started_at=started,
+        )
 
     def browser_fetch(self, url: str) -> ToolResult:
         started = time.time()

@@ -15,6 +15,7 @@ class MemoryHit:
     title: str
     snippet: str
     score: int
+    text: str
 
 
 class ObsidianMemory:
@@ -144,19 +145,22 @@ class ObsidianMemory:
             return []
         hits: list[MemoryHit] = []
         try:
-            paths = list(self.content_root().rglob("*.md"))
+            paths = list(self.vault.rglob("*.md"))
         except Exception:
             return []
         for path in paths:
-            if not path.is_file():
+            if not path.is_file() or self._is_ignored_retrieval_path(path):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
+            display_path = self._display_path(path)
             lower = text.lower()
+            path_text = f"{display_path} {path.stem}".lower()
             score = sum(lower.count(term) for term in terms)
+            score += 3 * sum(path_text.count(term) for term in terms)
             if score <= 0:
                 continue
             snippet = self._best_snippet(text, terms)
-            hits.append(MemoryHit(self._display_path(path), path.stem, snippet, score))
+            hits.append(MemoryHit(display_path, path.stem, snippet, score, self._note_text_for_context(text)))
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[:limit]
 
@@ -269,11 +273,23 @@ class ObsidianMemory:
         best = max(paragraphs, key=lambda part: sum(part.lower().count(term) for term in terms))
         return best[:700]
 
+    def _note_text_for_context(self, text: str, limit: int = 4000) -> str:
+        return text.strip()[:limit]
+
     def _display_path(self, path: Path) -> str:
         try:
             return str(path.resolve().relative_to(self.vault.resolve()))
         except ValueError:
             return str(path)
+
+    def _is_ignored_retrieval_path(self, path: Path) -> bool:
+        try:
+            rel = path.resolve().relative_to(self.vault.resolve())
+        except ValueError:
+            return True
+        if any(part.startswith(".") for part in rel.parts):
+            return True
+        return bool(rel.parts and rel.parts[0].lower() == "sessions")
 
     def _tree_items(self, root: Path, path: Path, depth: int, max_depth: int) -> list[dict[str, Any]]:
         if depth >= max_depth:

@@ -39,19 +39,23 @@ class Agent:
             session.title = title_from_query(content)
             session.title_source = "fallback"
 
-        routed = self._route_explicit_tool(session, content)
+        routed = self._route_explicit_tool(session, content, options)
         if routed is not None:
             answer = routed
         else:
-            hits = self.memory.retrieve(content)
-            memory_context = self._memory_context(content, hits)
-            try:
-                result = self.llm.complete(session.messages, memory_context, session.previous_response_id, options, attachments)
-                session.previous_response_id = result.get("response_id")
-                answer = result["text"]
-            except Exception as exc:
-                answer = f"I hit an LLM adapter error: {exc}"
-            self._maybe_infer_profile_trait(session, content)
+            selected = self._route_llm_selected_tool(session, content, options)
+            if selected is not None:
+                answer = selected
+            else:
+                hits = self.memory.retrieve(content)
+                memory_context = self._memory_context(content, hits)
+                try:
+                    result = self.llm.complete(session.messages, memory_context, session.previous_response_id, options, attachments)
+                    session.previous_response_id = result.get("response_id")
+                    answer = result["text"]
+                except Exception as exc:
+                    answer = f"I hit an LLM adapter error: {exc}"
+                self._maybe_infer_profile_trait(session, content)
 
         session.messages.append({"role": "assistant", "content": answer})
         self.memory.append_session_turn(session.session_id, "assistant", answer)
@@ -60,7 +64,7 @@ class Agent:
             self._generate_title_async(session.session_id, content, options)
         return self._payload(session, answer)
 
-    def _route_explicit_tool(self, session: Session, content: str) -> str | None:
+    def _route_explicit_tool(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
         lowered = content.lower()
         if lowered.startswith("remember:") or lowered.startswith("remember "):
             text = content.split(":", 1)[1].strip() if ":" in content else content[len("remember "):].strip()
@@ -69,6 +73,13 @@ class Agent:
             if result.status == "ok":
                 return "Remembered. I appended it to the Obsidian inbox."
             return f"I could not save that memory: {result.output}"
+
+        if self._is_memory_lookup_request(lowered):
+            result = self.tools.call("memory_search", query=content, limit=6)
+            session.tool_calls.append(asdict(result))
+            if result.status != "ok":
+                return f"I could not search memory: {result.output}"
+            return self._answer_memory_search(session, content, result.output, options)
 
         if lowered.startswith("/fetch "):
             url = content[len("/fetch "):].strip()
@@ -108,6 +119,145 @@ class Agent:
             return f"Command blocked or failed: {result.output}"
 
         return None
+
+    def _route_llm_selected_tool(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
+        if not hasattr(self.llm, "select_tool"):
+            return None
+        selection = self.llm.select_tool(content, self._llm_selectable_tools(), options)
+        if not selection:
+            return None
+        tool = selection.get("tool")
+        arguments = dict(selection.get("arguments") or {})
+        if tool == "memory_search":
+            result = self.tools.call("memory_search", query=str(arguments.get("query") or content), limit=6)
+            session.tool_calls.append(asdict(result))
+            if result.status != "ok":
+                return f"I could not search memory: {result.output}"
+            return self._answer_memory_search(session, content, result.output, options)
+        if tool == "browser_fetch":
+            url = str(arguments.get("url") or "").strip()
+            if not url:
+                return None
+            result = self.tools.call("browser_fetch", url=url)
+            session.tool_calls.append(asdict(result))
+            if result.status == "ok":
+                text = result.output.get("text", "")
+                return f"Fetched `{url}`.\n\n{text[:2500]}"
+            return f"Fetch failed: {result.output}"
+        if tool == "file_read":
+            path = str(arguments.get("path") or "").strip()
+            if not path:
+                return None
+            result = self.tools.call("file_read", path=path)
+            session.tool_calls.append(asdict(result))
+            if result.status == "ok":
+                return f"Read `{result.output['path']}`.\n\n{result.output['text']}"
+            return f"Read failed: {result.output}"
+        return None
+
+    def _llm_selectable_tools(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": "memory_search",
+                "description": "Search the configured Obsidian memory vault or workspace for notes relevant to the user request.",
+                "arguments": {"query": "search terms to use"},
+            },
+            {
+                "name": "browser_fetch",
+                "description": "Fetch and extract readable text from a specific http or https URL the user wants read.",
+                "arguments": {"url": "http or https URL"},
+            },
+            {
+                "name": "file_read",
+                "description": "Read a local file path when the user asks to inspect that file.",
+                "arguments": {"path": "path inside an allowed root"},
+            },
+        ]
+
+    def _is_memory_lookup_request(self, lowered: str) -> bool:
+        if any(phrase in lowered for phrase in ["in my memory", "from my memory", "from memory", "search memory", "check memory"]):
+            return True
+        return bool(re.search(r"\b(do you see|find|retrieve|look for|search)\b.*\b(notes?|documentation|docs?|memory)\b", lowered))
+
+    def _format_memory_search(self, query: str, output: dict[str, Any]) -> str:
+        status = output.get("status") or {}
+        hits = output.get("hits") or []
+        workspace = status.get("workspace") or "whole vault"
+        if not hits:
+            return (
+                "I searched your configured Obsidian memory and did not find matching notes.\n\n"
+                f"Vault: `{status.get('vault', 'unknown')}`\n"
+                f"Search scope: whole vault, excluding `Sessions/`\n"
+                f"Configured workspace: `{workspace}`"
+            )
+        lines = [
+            "I searched your configured Obsidian memory and found:",
+            "",
+        ]
+        for hit in hits:
+            lines.append(f"- `{hit['path']}`: {hit['snippet']}")
+        lines.extend([
+            "",
+            f"Vault: `{status.get('vault', 'unknown')}`",
+            f"Search scope: whole vault, excluding `Sessions/`",
+            f"Configured workspace: `{workspace}`",
+        ])
+        return "\n".join(lines)
+
+    def _answer_memory_search(self, session: Session, content: str, output: dict[str, Any], options: dict[str, Any]) -> str:
+        hits = output.get("hits") or []
+        if not hits:
+            return self._format_memory_search(content, output)
+        mode = self._memory_lookup_mode(content)
+        if mode == "confirm":
+            return self._format_memory_confirmation(output)
+        memory_context = "\n\n".join(f"[{hit['path']}]\n{hit.get('text') or hit['snippet']}" for hit in hits)
+        prompt = (
+            "Answer the user's memory lookup using only these Obsidian notes.\n"
+            "Response policy:\n"
+            "- If the user is only checking whether relevant notes exist, say yes or no, name the most relevant source paths, and ask what they want to inspect next.\n"
+            "- If the user asks for specific information, answer that specific question from the notes and cite the source paths.\n"
+            "- If the notes do not contain enough information to answer, say what was found and what is missing.\n"
+            "- Do not summarize everything unless the user asks for a summary.\n\n"
+            f"User request: {content}"
+        )
+        try:
+            result = self.llm.complete(
+                [{"role": "user", "content": prompt}],
+                memory_context,
+                None,
+                options,
+                [],
+            )
+            text = str(result.get("text") or "").strip()
+            if text and result.get("provider") != "local-fallback":
+                return text
+        except Exception:
+            pass
+        return self._format_memory_search(content, output)
+
+    def _format_memory_confirmation(self, output: dict[str, Any]) -> str:
+        status = output.get("status") or {}
+        hits = output.get("hits") or []
+        workspace = status.get("workspace") or "whole vault"
+        paths = "\n".join(f"- `{hit['path']}`" for hit in hits[:5])
+        return (
+            "Yes, I found relevant notes in your Obsidian memory.\n\n"
+            f"{paths}\n\n"
+            f"Search scope: whole vault, excluding `Sessions/`\n"
+            f"Configured workspace: `{workspace}`\n\n"
+            "What would you like to know from these notes?"
+        )
+
+    def _memory_lookup_mode(self, content: str) -> str:
+        words = re.findall(r"[A-Za-z0-9_']+", content.lower())
+        question_words = {"what", "which", "who", "where", "when", "why", "how"}
+        detail_verbs = {"explain", "summarize", "compare", "list", "describe", "tell", "show"}
+        if any(word in question_words or word in detail_verbs for word in words):
+            return "answer"
+        if "?" in content and len(words) > 8:
+            return "answer"
+        return "confirm"
 
     def _stored_user_content(self, content: str, attachments: list[dict[str, Any]]) -> str:
         if not attachments:

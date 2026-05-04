@@ -14,6 +14,39 @@ from sankalp.settings import load_settings
 
 
 class LLMAdapter:
+    def select_tool(self, message: str, tools: list[dict[str, Any]], options: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        settings = self._settings_with_options(options or {})
+        provider = settings.get("provider", "local")
+        tool_text = "\n".join(
+            f"- {tool['name']}: {tool['description']} Args: {json.dumps(tool.get('arguments') or {})}"
+            for tool in tools
+        )
+        prompt = (
+            "Choose whether a local assistant tool should handle the user message before normal chat.\n"
+            "Return only JSON. Use {\"tool\":\"none\",\"arguments\":{}} when no tool is needed.\n"
+            "Only choose a listed tool. Do not invent tools.\n\n"
+            f"Tools:\n{tool_text}\n\n"
+            f"User message:\n{message.strip()[:2000]}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            if provider == "local_openai":
+                result = self._local_openai(settings, messages, "")
+            elif provider == "gemini":
+                result = self._gemini(settings, messages, "")
+            elif provider == "codex":
+                result = self._codex(settings, messages, "")
+            elif provider == "openai":
+                api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return None
+                result = self._openai(api_key, settings, messages, "", None)
+            else:
+                return None
+        except Exception:
+            return None
+        return self._parse_tool_selection(str(result.get("text") or ""), {tool["name"] for tool in tools})
+
     def title_for_query(self, query: str, options: dict[str, Any] | None = None) -> str:
         settings = load_settings(include_secrets=True)
         fallback = title_from_query(query)
@@ -450,6 +483,28 @@ class LLMAdapter:
         if not words:
             return fallback
         return " ".join(words[:5])[:64]
+
+    def _parse_tool_selection(self, value: str, allowed: set[str]) -> dict[str, Any] | None:
+        text = value.strip()
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start:end + 1]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        tool = str(data.get("tool") or "").strip()
+        if not tool or tool == "none" or tool not in allowed:
+            return None
+        arguments = data.get("arguments")
+        if not isinstance(arguments, dict):
+            arguments = {}
+        return {"tool": tool, "arguments": arguments}
 
     def _fallback(self, messages: list[dict[str, str]], memory_context: str) -> str:
         latest = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")

@@ -137,6 +137,7 @@ function renderMessages() {
     const pending = message.pending ? `<div class="message-status"><span class="spinner"></span>${escapeHtml(message.status || "Thinking")}</div>` : "";
     const tools = message.tools ? `<div class="message-tools">${escapeHtml(message.tools)}</div>` : "";
     const content = message.role === "assistant" ? renderMarkdown(message.content || "") : escapeHtml(message.content || "");
+    const noteLinks = message.role === "assistant" ? renderNoteLinks(message.content || "") : "";
     const actions = message.role === "user" ? `<div class="message-actions">
       <button type="button" class="message-copy" data-index="${index}" title="Copy" aria-label="Copy">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>
@@ -145,13 +146,16 @@ function renderMessages() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z"/></svg>
       </button>
     </div>` : "";
-    return `<article class="message ${message.role}${message.pending ? " pending" : ""}" data-index="${index}"><div class="message-content">${content}</div>${actions}${pending}${tools}</article>`;
+    return `<article class="message ${message.role}${message.pending ? " pending" : ""}" data-index="${index}"><div class="message-content">${content}</div>${noteLinks}${actions}${pending}${tools}</article>`;
   }).join("");
   els.messages.querySelectorAll(".message-edit").forEach((button) => {
     button.addEventListener("click", () => startMessageEdit(Number(button.dataset.index)));
   });
   els.messages.querySelectorAll(".message-copy").forEach((button) => {
     button.addEventListener("click", () => copyMessage(Number(button.dataset.index), button));
+  });
+  els.messages.querySelectorAll("button[data-note-open-path]").forEach((button) => {
+    button.addEventListener("click", () => openMemoryPath(button.dataset.noteOpenPath));
   });
   els.messages.scrollTop = els.messages.scrollHeight;
 }
@@ -184,6 +188,43 @@ function startMessageEdit(index) {
 
 function stripAttachmentLine(content) {
   return String(content).replace(/\n\nAttached:.*$/s, "").trim();
+}
+
+function extractNotePaths(markdown) {
+  const found = new Set();
+  const text = String(markdown || "");
+  const patterns = [
+    /`([^`\n]+\.md)`/g,
+    /\[([^\]\n]+\.md)\]/g,
+    /((?:[A-Za-z0-9_. -]+\/)+[A-Za-z0-9_. -]+\.md)/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const path = match[1].trim();
+      if (!path || /^https?:\/\//i.test(path) || path.includes("://")) continue;
+      found.add(path.replace(/^\/+/, ""));
+    }
+  }
+  return Array.from(found);
+}
+
+function renderNoteLinks(markdown) {
+  const paths = extractNotePaths(markdown);
+  if (!paths.length) return "";
+  return `<div class="note-open-links">${paths.map((path) => {
+    return `<button type="button" class="note-open-link" data-note-open-path="${escapeHtml(path)}" title="Open in Obsidian: ${escapeHtml(path)}" aria-label="Open in Obsidian: ${escapeHtml(path)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6V3Z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>
+      <span>${escapeHtml(path)}</span>
+    </button>`;
+  }).join("")}</div>`;
+}
+
+async function openMemoryPath(path) {
+  if (!path) return;
+  await api("/api/memory/open", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
 }
 
 function renderMarkdown(markdown) {
@@ -237,6 +278,7 @@ function renderTools() {
 }
 
 function renderMemory(items) {
+  if (!els.memory) return;
   els.memory.innerHTML = (items || []).map((note) => {
     return `<div class="note">
       <strong>${escapeHtml(note.path)}</strong>
@@ -257,6 +299,7 @@ function renderMacOSAccess(info) {
 }
 
 function renderMemoryTree(tree) {
+  if (!els.memoryTree) return;
   if (!tree || tree.error) {
     els.memoryTree.innerHTML = `<div class="empty">${escapeHtml(tree?.error || "No tree available.")}</div>`;
     return;
@@ -312,10 +355,7 @@ function renderFolderChildren(children) {
   }).join("") || `<div class="empty">No subfolders or notes in this folder.</div>`;
   els.folderChildren.querySelectorAll("button[data-open-path]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api("/api/memory/open", {
-        method: "POST",
-        body: JSON.stringify({ path: button.dataset.openPath }),
-      });
+      await openMemoryPath(button.dataset.openPath);
     });
   });
   els.folderChildren.querySelectorAll("button[data-view-notes-path]").forEach((button) => {
@@ -343,10 +383,7 @@ function renderNotesPreview(notes) {
   }).join("") || `<div class="empty">No notes found.</div>`;
   els.notesPreviewGrid.querySelectorAll("button[data-open-path]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await api("/api/memory/open", {
-        method: "POST",
-        body: JSON.stringify({ path: button.dataset.openPath }),
-      });
+      await openMemoryPath(button.dataset.openPath);
     });
   });
 }

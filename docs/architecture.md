@@ -11,14 +11,18 @@ plugin runtime until usage proves the need.
 
 - `sankalp/server.py`: loopback HTTP server, static UI, JSON APIs, and SSE chat route.
 - `sankalp/agent/core.py`: turn orchestration, explicit command routing, memory retrieval,
-  session updates, edit/resend branching, and background generated titles.
+  memory-search intent routing, session updates, edit/resend branching, and background
+  generated titles.
 - `sankalp/agent/llm.py`: provider adapters for local fallback, OpenAI-compatible endpoints,
   Codex CLI, Gemini API, and OpenAI API.
 - `sankalp/sessions/store.py`: one JSON file per session under `~/.sankalp/sessions`.
 - `sankalp/memory/obsidian.py`: Markdown vault schema, retrieval, profile memory, and
   Obsidian open helpers.
-- `sankalp/tools/registry.py`: small explicit tools with structured logged results.
+- `sankalp/tools/registry.py`: small explicit tools with structured logged results,
+  including auditable Obsidian search.
 - `sankalp/static/*`: chat, profile, memory, and settings UI.
+  Chat messages detect referenced Obsidian `.md` paths and render open-note controls that
+  reuse `/api/memory/open`.
 
 ## Flow
 
@@ -59,6 +63,23 @@ Decisions/
 Writes are append-first. `remember:` captures go to `Inbox/`; chat turns go to `Sessions/`;
 profile edits and inferred traits go to `People/you.md`. Retrieval is lightweight keyword
 scoring for now.
+
+When the user explicitly asks to search, check, retrieve, or find something in memory,
+`Agent.turn` routes the request through the `memory_search` tool before any model call.
+The tool searches the configured Obsidian vault across knowledge folders, intentionally
+skipping `Sessions/` because that folder stores chat transcripts rather than promoted
+memory. Search scores note text plus folder and file names, logs the query, vault status,
+and matching snippets in `session.tool_calls`, then the agent summarizes the matched notes
+when the user asks a content question. If the user is only checking whether memory exists,
+the agent confirms yes or no, cites the matched paths, and asks what the user wants to
+inspect next. Normal chat still receives lightweight retrieved context without forcing a
+visible tool call, keeping everyday turns simple while making memory-audit requests explicit.
+
+Tool routing is intentionally two-step. Cheap deterministic commands and regex checks run
+first for obvious intents such as `remember:` and "in my memory". If those do not select a
+tool, the configured LLM may choose from a small safe-read catalog: `memory_search`,
+`browser_fetch`, or `file_read`. Write and terminal tools remain explicit commands because
+LLM selection is useful for wording flexibility, not for hidden side effects.
 
 ## Providers
 

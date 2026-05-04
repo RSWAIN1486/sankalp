@@ -49,16 +49,25 @@
 - `People/you.md` stores user-authored profile memory.
 - Agent-inferred traits are separate, low-confidence, and individually deletable.
 - `remember:` appends durable facts to the inbox.
+- Memory lookup searches the whole configured vault, skips `Sessions/`, and matches both
+  note contents and folder/file names.
+- Memory lookup response style follows the query: existence checks return yes/no plus
+  source paths and a follow-up prompt; specific questions are answered from the notes.
+- Assistant messages that mention Obsidian `.md` note paths show open-note controls that
+  launch the note through the same Obsidian open endpoint used by the Memory tab.
 
 ## Tools
 
 - `memory_remember`
+- `memory_search`
 - `browser_fetch`
 - `file_read`
 - `file_append`
 - `terminal`, disabled by default
 
-Every tool call is logged into the session activity trace.
+Every tool call is logged into the session activity trace. Obvious commands are routed
+deterministically first. If no deterministic route matches, the configured model can choose
+from safe read/search tools before normal chat.
 
 ## macOS App
 

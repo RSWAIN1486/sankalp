@@ -32,6 +32,18 @@ class ToolTests(unittest.TestCase):
 
             self.assertEqual(result.status, "blocked")
 
+    def test_memory_search_returns_obsidian_hits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = ObsidianMemory(Path(tmp))
+            memory.capture("Stripe Radar helps with fraud detection notes.", source="test")
+            tools = ToolRegistry(memory)
+
+            result = tools.call("memory_search", query="stripe fraud detection")
+
+            self.assertEqual(result.status, "ok")
+            self.assertEqual(result.output["hits"][0]["path"].split("/")[0], "Inbox")
+            self.assertIn("Stripe Radar", result.output["hits"][0]["snippet"])
+
 
 if __name__ == "__main__":
     unittest.main()
