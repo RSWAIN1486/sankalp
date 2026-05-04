@@ -83,3 +83,10 @@ the app.
 
 The Settings screen includes `Relaunch with latest code`, which reinstalls the app wrapper
 from the current repo and restarts the backend.
+
+## Provider Models
+
+Settings loads model dropdowns for Gemini, OpenAI, and Codex. Gemini and OpenAI use live
+provider model APIs when keys are configured and fall back to curated current lists. Codex
+uses `codex debug models` after `codex login`; the UI can start `codex login` and then
+refresh the Codex model dropdown.

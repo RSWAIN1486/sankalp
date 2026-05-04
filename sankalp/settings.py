@@ -12,7 +12,7 @@ SETTINGS_PATH = STATE_DIR / "settings.json"
 DEFAULT_SETTINGS: dict[str, Any] = {
     "provider": "local",
     "openai_model": "gpt-5.5",
-    "gemini_model": "gemini-2.5-flash",
+    "gemini_model": "gemini-3-flash-preview",
     "codex_model": "",
     "local_openai_base_url": "http://localhost:2276/v1",
     "local_openai_model": "",

@@ -37,11 +37,15 @@ Routes:
 - `GET /api/macos/status` reports whether the local macOS app wrapper is installed.
 - `GET /api/profile` reads `People/you.md` as structured profile memory.
 - `GET /api/settings` reads provider settings with API keys masked.
+- `GET /api/models?provider=<provider>` returns dropdown model options for OpenAI,
+  Gemini, and Codex.
+- `GET /api/codex/status` reports local Codex login state.
 - `POST /api/session/new` creates a session.
 - `POST /api/chat` runs one agent turn.
 - `POST /api/profile` updates the user-authored profile section.
 - `POST /api/profile/trait/delete` removes one inferred trait block.
 - `POST /api/settings` updates provider, model, and optional API key settings.
+- `POST /api/codex/login` starts `codex login` asynchronously.
 - `POST /api/macos/install-app` creates `~/Applications/Sankalp.app`.
 - `POST /api/macos/open-full-disk-access` opens the macOS Full Disk Access settings pane.
 - `POST /api/app/relaunch` reinstalls the app wrapper and restarts the backend.
@@ -87,6 +91,11 @@ The model adapter supports five providers:
 Settings intentionally show only the selected provider's fields. OpenAI-compatible
 endpoints include presets for local runtimes and common API-key providers, but all route
 through the same simple Chat Completions adapter.
+
+OpenAI and Gemini model controls are dropdowns. When API keys exist, Sankalp calls the
+provider model-list endpoints. Without keys or on failure, it falls back to model lists
+seeded from Hermes and official provider docs. Codex models come from `codex debug models`
+after login; the UI can start `codex login`, which opens the browser auth flow.
 
 Hermes provider setup research used:
 

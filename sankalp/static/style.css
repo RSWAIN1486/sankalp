@@ -494,6 +494,13 @@ label select {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.provider-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
 .provider-guide {
   display: grid;
   gap: 10px;

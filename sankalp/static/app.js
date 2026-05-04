@@ -82,9 +82,14 @@ const els = {
   localOpenAIKey: document.querySelector("#localOpenAIKey"),
   geminiKey: document.querySelector("#geminiKey"),
   geminiModel: document.querySelector("#geminiModel"),
+  geminiModelsStatus: document.querySelector("#geminiModelsStatus"),
   codexModel: document.querySelector("#codexModel"),
+  codexLogin: document.querySelector("#codexLogin"),
+  codexStatus: document.querySelector("#codexStatus"),
+  refreshCodexModels: document.querySelector("#refreshCodexModels"),
   openaiKey: document.querySelector("#openaiKey"),
   openaiModel: document.querySelector("#openaiModel"),
+  openaiModelsStatus: document.querySelector("#openaiModelsStatus"),
   saveSettings: document.querySelector("#saveSettings"),
   settingsStatus: document.querySelector("#settingsStatus"),
   relaunchApp: document.querySelector("#relaunchApp"),
@@ -300,13 +305,19 @@ function renderSettings(nextSettings) {
   els.provider.value = settings.provider || "local";
   els.localOpenAIBaseUrl.value = settings.local_openai_base_url || "http://localhost:2276/v1";
   els.localOpenAIModel.value = settings.local_openai_model || "";
-  els.geminiModel.value = settings.gemini_model || "gemini-2.5-flash";
-  els.codexModel.value = settings.codex_model || "";
-  els.openaiModel.value = settings.openai_model || "gpt-5.5";
   els.obsidianVaultPath.value = settings.obsidian_vault_path || "";
   els.geminiKey.placeholder = settings.has_gemini_api_key ? "Gemini key saved" : "Leave blank to keep existing key";
   els.localOpenAIKey.placeholder = settings.has_local_openai_api_key ? "Local key saved" : "Optional";
   els.openaiKey.placeholder = settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key";
+  updateProviderSummary();
+  updateProviderFields();
+  loadProviderModels("openai", settings.openai_model || "gpt-5.5");
+  loadProviderModels("gemini", settings.gemini_model || "gemini-3-flash-preview");
+  loadProviderModels("codex", settings.codex_model || "");
+  loadCodexStatus();
+}
+
+function updateProviderSummary() {
   const label = {
     local: "Local fallback",
     local_openai: `OpenAI-compatible (${els.localOpenAIModel.value || "no model"})`,
@@ -315,7 +326,6 @@ function renderSettings(nextSettings) {
     openai: `OpenAI API (${els.openaiModel.value})`,
   }[els.provider.value] || "Local fallback";
   els.providerStatus.textContent = label;
-  updateProviderFields();
 }
 
 function updateProviderFields() {
@@ -328,6 +338,43 @@ function renderProviderGuide() {
   els.providerGuide.innerHTML = providerGuide.map(([name, detail]) => {
     return `<div class="guide-card"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(detail)}</span></div>`;
   }).join("");
+}
+
+function setModelOptions(select, models, selected) {
+  const selectedValue = selected || (models[0] && models[0].id) || "";
+  const normalized = [...(models || [])];
+  if (selectedValue && !normalized.some((model) => model.id === selectedValue)) {
+    normalized.unshift({ id: selectedValue, label: selectedValue });
+  }
+  select.innerHTML = normalized.map((model) => {
+    const attr = model.id === selectedValue ? " selected" : "";
+    return `<option value="${escapeHtml(model.id)}"${attr}>${escapeHtml(model.label || model.id)}</option>`;
+  }).join("");
+}
+
+async function loadProviderModels(provider, selected) {
+  const data = await api(`/api/models?provider=${encodeURIComponent(provider)}`);
+  const payload = data.models || {};
+  if (provider === "openai") {
+    setModelOptions(els.openaiModel, payload.models || [], selected);
+    els.openaiModelsStatus.textContent = `Models: ${payload.source || "unknown"}${payload.error ? ` (${payload.error})` : ""}`;
+    updateProviderSummary();
+  }
+  if (provider === "gemini") {
+    setModelOptions(els.geminiModel, payload.models || [], selected);
+    els.geminiModelsStatus.textContent = `Models: ${payload.source || "unknown"}${payload.error ? ` (${payload.error})` : ""}`;
+    updateProviderSummary();
+  }
+  if (provider === "codex") {
+    setModelOptions(els.codexModel, payload.models || [], selected);
+    updateProviderSummary();
+  }
+}
+
+async function loadCodexStatus() {
+  const data = await api("/api/codex/status");
+  const status = data.codex || {};
+  els.codexStatus.textContent = status.logged_in ? "Codex is logged in." : status.login_running ? "Codex login is running." : "Codex is not logged in.";
 }
 
 async function loadSessions() {
@@ -456,12 +503,19 @@ els.railButtons.forEach((button) => {
     els.screens.forEach((screen) => screen.classList.toggle("active", screen.id === `screen${button.dataset.panel[0].toUpperCase()}${button.dataset.panel.slice(1)}`));
   });
 });
-els.provider.addEventListener("change", updateProviderFields);
+els.provider.addEventListener("change", () => {
+  updateProviderFields();
+  updateProviderSummary();
+});
+els.geminiModel.addEventListener("change", updateProviderSummary);
+els.codexModel.addEventListener("change", updateProviderSummary);
+els.openaiModel.addEventListener("change", updateProviderSummary);
 els.compatiblePreset.addEventListener("change", () => {
   const preset = compatiblePresets[els.compatiblePreset.value];
   if (!preset) return;
   els.localOpenAIBaseUrl.value = preset.baseUrl;
   if (preset.model) els.localOpenAIModel.value = preset.model;
+  updateProviderSummary();
 });
 els.saveProfile.addEventListener("click", async () => {
   els.saveProfile.textContent = "Saving...";
@@ -494,6 +548,19 @@ els.saveSettings.addEventListener("click", async () => {
   els.openaiKey.value = "";
   renderSettings(data.settings);
   els.settingsStatus.textContent = "Saved";
+});
+els.codexLogin.addEventListener("click", async () => {
+  els.codexStatus.textContent = "Starting Codex login...";
+  const data = await api("/api/codex/login", { method: "POST", body: "{}" });
+  if (data.codex && data.codex.ok === false) {
+    els.codexStatus.textContent = data.codex.error || "Could not start Codex login.";
+    return;
+  }
+  await loadCodexStatus();
+});
+els.refreshCodexModels.addEventListener("click", async () => {
+  await loadCodexStatus();
+  await loadProviderModels("codex", els.codexModel.value);
 });
 els.relaunchApp.addEventListener("click", async () => {
   els.appStatus.textContent = "Relaunching...";

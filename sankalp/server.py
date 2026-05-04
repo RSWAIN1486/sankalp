@@ -12,6 +12,7 @@ from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
 from sankalp.macos import install_macos_app, macos_status, open_full_disk_access, relaunch_with_latest_code
 from sankalp.memory import ObsidianMemory
+from sankalp.provider_models import codex_status, provider_models, start_codex_login
 from sankalp.sessions import SessionStore
 from sankalp.settings import discover_obsidian_vaults, load_settings, save_settings
 from sankalp.tools import ToolRegistry
@@ -90,6 +91,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"profile": AGENT.memory.read_profile()})
             if parsed.path == "/api/settings":
                 return self._json({"settings": load_settings()})
+            if parsed.path == "/api/models":
+                query = parse_qs(parsed.query)
+                provider = (query.get("provider") or [""])[0]
+                return self._json({"models": provider_models(provider)})
+            if parsed.path == "/api/codex/status":
+                return self._json({"codex": codex_status()})
             return self._json({"error": "not found"}, status=404)
         except Exception:
             traceback.print_exc()
@@ -125,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"macos": open_full_disk_access()})
             if parsed.path == "/api/app/relaunch":
                 return self._json({"relaunch": relaunch_with_latest_code()})
+            if parsed.path == "/api/codex/login":
+                return self._json({"codex": start_codex_login()})
             if parsed.path == "/api/memory/open":
                 body = self._body()
                 result = AGENT.memory.open_target(str(body.get("path") or ""))
