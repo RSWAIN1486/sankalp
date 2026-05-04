@@ -107,7 +107,14 @@ class Handler(BaseHTTPRequestHandler):
             parsed = urlparse(self.path)
             if parsed.path == "/api/chat":
                 body = self._body()
-                response = AGENT.turn(body.get("session_id"), body.get("message", ""))
+                response = AGENT.turn(
+                    body.get("session_id"),
+                    body.get("message", ""),
+                    {
+                        "attachments": body.get("attachments") or [],
+                        "options": body.get("options") or {},
+                    },
+                )
                 return self._json(response)
             if parsed.path == "/api/session/new":
                 session = AGENT.sessions.create()

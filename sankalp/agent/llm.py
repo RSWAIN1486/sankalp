@@ -48,18 +48,27 @@ class LLMAdapter:
             return {"ok": False, "provider": provider, "model": self._selected_model(settings), "error": text}
         return {"ok": bool(text), "provider": provider, "model": self._selected_model(settings), "text": text}
 
-    def complete(self, messages: list[dict[str, str]], memory_context: str, previous_response_id: str | None = None) -> dict[str, Any]:
-        settings = load_settings(include_secrets=True)
+    def complete(
+        self,
+        messages: list[dict[str, str]],
+        memory_context: str,
+        previous_response_id: str | None = None,
+        options: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        settings = self._settings_with_options(options or {})
+        attachments = attachments or []
+        messages = self._with_text_attachments(messages, attachments)
         provider = settings.get("provider", "local")
         if provider == "local_openai":
-            return self._local_openai(settings, messages, memory_context)
+            return self._local_openai(settings, messages, memory_context, attachments)
         if provider == "gemini":
-            return self._gemini(settings, messages, memory_context)
+            return self._gemini(settings, messages, memory_context, attachments)
         if provider == "codex":
             return self._codex(settings, messages, memory_context)
         api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
         if provider == "openai" and api_key:
-            return self._openai(api_key, settings, messages, memory_context, previous_response_id)
+            return self._openai(api_key, settings, messages, memory_context, previous_response_id, attachments)
         if provider == "openai" and not api_key:
             return {
                 "text": "OpenAI is selected, but no OpenAI API key is configured. Add one in Settings or choose Gemini/Codex.",
@@ -84,7 +93,75 @@ class LLMAdapter:
             "provider": "local-fallback",
         }
 
-    def _chat_messages(self, messages: list[dict[str, str]], memory_context: str) -> list[dict[str, str]]:
+    def _settings_with_options(self, options: dict[str, Any]) -> dict[str, Any]:
+        settings = load_settings(include_secrets=True)
+        provider = str(options.get("provider") or settings.get("provider") or "local")
+        settings["provider"] = provider
+        model = str(options.get("model") or "").strip()
+        if model:
+            if provider == "openai":
+                settings["openai_model"] = model
+            elif provider == "gemini":
+                settings["gemini_model"] = model
+            elif provider == "codex":
+                settings["codex_model"] = model
+            elif provider == "local_openai":
+                settings["local_openai_model"] = model
+        effort = str(options.get("reasoning_effort") or "").strip()
+        if effort and effort != "auto":
+            settings["reasoning_effort"] = effort
+        return settings
+
+    def _chat_messages(self, messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        attachments = attachments or []
+        latest_user_index = self._latest_user_index(messages)
+        chat_messages: list[dict[str, Any]] = [{"role": "system", "content": self._developer_prompt(memory_context)}]
+        media = self._media_attachments(attachments, include_pdf=False)
+        for index, item in enumerate(messages[-20:]):
+            role = "assistant" if item.get("role") == "assistant" else "user"
+            content: Any = item.get("content", "")
+            if index == latest_user_index and media:
+                parts = [{"type": "text", "text": content}]
+                parts.extend({"type": "image_url", "image_url": {"url": self._data_url(att)}} for att in media if att.get("kind") == "image")
+                content = parts
+            chat_messages.append({"role": role, "content": content})
+        return chat_messages
+
+    def _with_text_attachments(self, messages: list[dict[str, str]], attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        context = self._attachment_text_context(attachments)
+        if not context:
+            return list(messages)
+        copied = [dict(item) for item in messages]
+        for item in reversed(copied):
+            if item.get("role") == "user":
+                item["content"] = f"{item.get('content', '')}\n\n{context}"
+                break
+        return copied
+
+    def _attachment_text_context(self, attachments: list[dict[str, Any]]) -> str:
+        chunks = []
+        for item in attachments:
+            if item.get("kind") == "text" and item.get("text"):
+                chunks.append(f"[Attachment: {item.get('name', 'file')}]\n{item.get('text')}")
+            elif item.get("kind") in {"image", "pdf"}:
+                chunks.append(f"[Attachment: {item.get('name', 'file')} ({item.get('type', item.get('kind'))}) sent as media input when supported.]")
+        return "\n\n".join(chunks)
+
+    def _media_attachments(self, attachments: list[dict[str, Any]], include_pdf: bool = True) -> list[dict[str, Any]]:
+        kinds = {"image", "pdf"} if include_pdf else {"image"}
+        return [item for item in attachments if item.get("kind") in kinds and item.get("data")]
+
+    def _latest_user_index(self, messages: list[dict[str, Any]]) -> int:
+        visible = messages[-20:]
+        for index in range(len(visible) - 1, -1, -1):
+            if visible[index].get("role") != "assistant":
+                return index
+        return len(visible) - 1
+
+    def _data_url(self, attachment: dict[str, Any]) -> str:
+        return f"data:{attachment.get('type') or 'application/octet-stream'};base64,{attachment.get('data') or ''}"
+
+    def _chat_messages_text_only(self, messages: list[dict[str, str]], memory_context: str) -> list[dict[str, str]]:
         return [{"role": "system", "content": self._developer_prompt(memory_context)}] + [
             {"role": "assistant" if item.get("role") == "assistant" else "user", "content": item.get("content", "")}
             for item in messages[-20:]
@@ -102,12 +179,23 @@ class LLMAdapter:
             prompt += "\n\nRelevant memory:\n" + memory_context
         return prompt
 
-    def _openai(self, api_key: str, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str, previous_response_id: str | None) -> dict[str, Any]:
+    def _openai(
+        self,
+        api_key: str,
+        settings: dict[str, Any],
+        messages: list[dict[str, Any]],
+        memory_context: str,
+        previous_response_id: str | None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": settings.get("openai_model") or MODEL,
-            "input": [{"role": "developer", "content": self._developer_prompt(memory_context)}] + messages[-20:],
+            "input": self._openai_input(messages, memory_context, attachments or []),
             "store": True,
         }
+        effort = settings.get("reasoning_effort")
+        if effort and effort != "none":
+            payload["reasoning"] = {"effort": effort}
         if previous_response_id:
             payload["previous_response_id"] = previous_response_id
         request = urllib.request.Request(
@@ -127,7 +215,25 @@ class LLMAdapter:
             "provider": "openai-responses",
         }
 
-    def _gemini(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str) -> dict[str, Any]:
+    def _openai_input(self, messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        latest_user_index = self._latest_user_index(messages)
+        media = self._media_attachments(attachments)
+        items: list[dict[str, Any]] = [{"role": "developer", "content": self._developer_prompt(memory_context)}]
+        for index, item in enumerate(messages[-20:]):
+            role = "assistant" if item.get("role") == "assistant" else "user"
+            content: Any = item.get("content", "")
+            if index == latest_user_index and media:
+                parts = [{"type": "input_text", "text": content}]
+                for attachment in media:
+                    if attachment.get("kind") == "image":
+                        parts.append({"type": "input_image", "image_url": self._data_url(attachment)})
+                    elif attachment.get("kind") == "pdf":
+                        parts.append({"type": "input_file", "filename": attachment.get("name") or "document.pdf", "file_data": attachment.get("data")})
+                content = parts
+            items.append({"role": role, "content": content})
+        return items
+
+    def _gemini(self, settings: dict[str, Any], messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         api_key = settings.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
             return {
@@ -135,10 +241,21 @@ class LLMAdapter:
                 "response_id": None,
                 "provider": "local-fallback",
             }
+        attachments = attachments or []
+        latest_user_index = self._latest_user_index(messages)
+        media = self._media_attachments(attachments)
         contents = []
-        for message in messages[-20:]:
+        for index, message in enumerate(messages[-20:]):
             role = "model" if message.get("role") == "assistant" else "user"
-            contents.append({"role": role, "parts": [{"text": message.get("content", "")}]})
+            parts = [{"text": message.get("content", "")}]
+            if index == latest_user_index:
+                parts.extend({
+                    "inline_data": {
+                        "mime_type": attachment.get("type") or "application/octet-stream",
+                        "data": attachment.get("data") or "",
+                    }
+                } for attachment in media)
+            contents.append({"role": role, "parts": parts})
         model = settings.get("gemini_model") or "gemini-2.5-flash"
         payload = {
             "systemInstruction": {"parts": [{"text": self._developer_prompt(memory_context)}]},
@@ -161,7 +278,7 @@ class LLMAdapter:
             "provider": "gemini",
         }
 
-    def _local_openai(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str) -> dict[str, Any]:
+    def _local_openai(self, settings: dict[str, Any], messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         base_url = (settings.get("local_openai_base_url") or "").rstrip("/")
         model = (settings.get("local_openai_model") or "").strip()
         if not base_url:
@@ -182,7 +299,7 @@ class LLMAdapter:
             headers["Authorization"] = f"Bearer {api_key}"
         payload = {
             "model": model,
-            "messages": self._chat_messages(messages, memory_context),
+            "messages": self._chat_messages(messages, memory_context, attachments),
             "stream": False,
         }
         request = urllib.request.Request(
@@ -225,6 +342,9 @@ class LLMAdapter:
             model = (settings.get("codex_model") or "").strip()
             if model:
                 command.extend(["-m", model])
+            effort = str(settings.get("reasoning_effort") or "").strip()
+            if effort and effort != "none":
+                command.extend(["-c", f'model_reasoning_effort="{effort}"'])
             command.append("-")
             proc = subprocess.run(command, input=prompt, text=True, capture_output=True, timeout=180)
             text = output.read().decode("utf-8", errors="replace").strip()

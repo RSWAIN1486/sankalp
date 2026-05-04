@@ -203,7 +203,6 @@ p {
 }
 
 .primary,
-.composer button,
 .secondary {
   border: 0;
   border-radius: 8px;
@@ -348,26 +347,127 @@ p {
 }
 
 .composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
   padding: 16px 22px 20px;
   border-top: 1px solid var(--line);
   background: var(--panel);
 }
 
+.composer-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
 .composer textarea {
+  width: 100%;
   resize: none;
   min-height: 48px;
   max-height: 180px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  padding: 12px;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px 8px;
   outline: none;
 }
 
 .composer textarea:focus {
-  border-color: var(--accent);
+  border-color: transparent;
+}
+
+.composer-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.composer-tools-left,
+.composer-tools-right,
+.composer-model-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer-model-controls {
+  justify-content: center;
+}
+
+.composer-model-controls select {
+  min-width: 116px;
+  max-width: 210px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0 8px;
+}
+
+#composerModel {
+  min-width: 150px;
+}
+
+#fileInput {
+  display: none;
+}
+
+.attachment-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #c6ddd5;
+  background: var(--soft);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.attachment-chip small {
+  color: var(--muted);
+}
+
+.context-pill {
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.send-button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.send-button svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .activity,
@@ -779,7 +879,18 @@ label select {
     grid-template-columns: 1fr;
   }
 
-  .composer {
+  .composer-toolbar {
     grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .composer-model-controls,
+  .composer-tools-right {
+    justify-content: stretch;
+  }
+
+  .composer-model-controls select {
+    min-width: 0;
+    flex: 1;
   }
 }

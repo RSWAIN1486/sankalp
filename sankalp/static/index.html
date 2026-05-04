@@ -46,8 +46,36 @@
           </header>
           <section id="messages" class="messages"></section>
           <form id="composer" class="composer">
-            <textarea id="messageInput" rows="2" placeholder="Ask, or type remember: something worth keeping"></textarea>
-            <button type="submit">Send</button>
+            <div class="composer-box">
+              <textarea id="messageInput" rows="2" placeholder="Ask, or type remember: something worth keeping"></textarea>
+              <div id="attachmentList" class="attachment-list"></div>
+              <div class="composer-toolbar">
+                <div class="composer-tools-left">
+                  <input id="fileInput" type="file" multiple accept=".md,.txt,.pdf,text/markdown,text/plain,application/pdf,image/*">
+                  <button id="attachFiles" type="button" class="icon-button" title="Attach files" aria-label="Attach files">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 1 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+                  </button>
+                </div>
+                <div class="composer-model-controls">
+                  <select id="composerProvider" title="Provider" aria-label="Provider"></select>
+                  <select id="composerModel" title="Model" aria-label="Model"></select>
+                  <select id="reasoningEffort" title="Reasoning effort" aria-label="Reasoning effort">
+                    <option value="auto">auto</option>
+                    <option value="none">none</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="xhigh">xhigh</option>
+                  </select>
+                </div>
+                <div class="composer-tools-right">
+                  <button id="contextUsage" type="button" class="context-pill" title="Estimated context usage" aria-label="Estimated context usage">0 / 128k</button>
+                  <button id="sendButton" type="submit" class="send-button" title="Send" aria-label="Send">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
           </form>
         </section>
 

@@ -65,7 +65,12 @@ Files:
 
 The agent receives a user message, saves it to the active JSON session, appends the turn
 to the Obsidian session note, and then either routes an explicit command or calls the LLM
-adapter.
+adapter. Chat requests may also include per-message provider/model/reasoning overrides and
+inline attachments from the composer. Text and Markdown attachments are folded into the
+latest user message as context. Images are passed as image parts to OpenAI-compatible
+Chat Completions and OpenAI Responses; PDFs and images are passed inline to Gemini and
+OpenAI where supported. Codex receives attachment text context and attachment names because
+the CLI path is text-first in this MVP.
 
 Explicit command routing exists for the MVP commands:
 
@@ -98,6 +103,11 @@ OpenAI and Gemini model controls are dropdowns. When API keys exist, Sankalp cal
 provider model-list endpoints. Without keys or on failure, it falls back to model lists
 seeded from Hermes and official provider docs. Codex models come from `codex debug models`
 after login; the UI can start `codex login`, which opens the browser auth flow.
+
+The chat composer mirrors the provider list for quick per-message switching. These composer
+choices do not overwrite Settings; they are sent with the next chat request only. The
+context counter is an approximate client-side estimate from session text, draft text, and
+inline attachments, useful as a warning rather than billing-grade token accounting.
 
 The Settings screen also exposes a `Test hello` action. The browser posts the current form
 values to `/api/provider/test`; the backend merges non-empty API keys and selected model

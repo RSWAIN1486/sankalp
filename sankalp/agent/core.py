@@ -18,11 +18,15 @@ class Agent:
         self.tools = tools
         self.llm = llm or LLMAdapter()
 
-    def turn(self, session_id: str | None, content: str) -> dict[str, Any]:
+    def turn(self, session_id: str | None, content: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        request = request or {}
+        attachments = list(request.get("attachments") or [])
+        options = dict(request.get("options") or {})
         session = self.sessions.get(session_id)
         content = content.strip()
-        session.messages.append({"role": "user", "content": content})
-        self.memory.append_session_turn(session.session_id, "user", content)
+        stored_content = self._stored_user_content(content, attachments)
+        session.messages.append({"role": "user", "content": stored_content})
+        self.memory.append_session_turn(session.session_id, "user", stored_content)
 
         routed = self._route_explicit_tool(session, content)
         if routed is not None:
@@ -31,7 +35,7 @@ class Agent:
             hits = self.memory.retrieve(content)
             memory_context = self._memory_context(content, hits)
             try:
-                result = self.llm.complete(session.messages, memory_context, session.previous_response_id)
+                result = self.llm.complete(session.messages, memory_context, session.previous_response_id, options, attachments)
                 session.previous_response_id = result.get("response_id")
                 answer = result["text"]
             except Exception as exc:
@@ -91,6 +95,13 @@ class Agent:
             return f"Command blocked or failed: {result.output}"
 
         return None
+
+    def _stored_user_content(self, content: str, attachments: list[dict[str, Any]]) -> str:
+        if not attachments:
+            return content
+        names = ", ".join(str(item.get("name") or "attachment") for item in attachments)
+        base = content or "(attached files)"
+        return f"{base}\n\nAttached: {names}"
 
     def _memory_context(self, query: str, hits: list[Any]) -> str:
         profile = self.memory.read_profile()

@@ -3,6 +3,8 @@ let messages = [];
 let toolCalls = [];
 let settings = {};
 let providerTestResults = {};
+let pendingAttachments = [];
+let modelOptionsByProvider = {};
 
 const compatiblePresets = {
   custom: { baseUrl: "http://localhost:2276/v1", model: "" },
@@ -98,6 +100,13 @@ const els = {
   relaunchApp: document.querySelector("#relaunchApp"),
   appStatus: document.querySelector("#appStatus"),
   providerStatus: document.querySelector("#providerStatus"),
+  composerProvider: document.querySelector("#composerProvider"),
+  composerModel: document.querySelector("#composerModel"),
+  reasoningEffort: document.querySelector("#reasoningEffort"),
+  fileInput: document.querySelector("#fileInput"),
+  attachFiles: document.querySelector("#attachFiles"),
+  attachmentList: document.querySelector("#attachmentList"),
+  contextUsage: document.querySelector("#contextUsage"),
   form: document.querySelector("#composer"),
   input: document.querySelector("#messageInput"),
   status: document.querySelector("#status"),
@@ -314,6 +323,7 @@ function renderSettings(nextSettings) {
   els.openaiKey.placeholder = settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key";
   updateProviderSummary();
   updateProviderFields();
+  renderComposerProviderOptions();
   renderProviderTestStatus();
   loadProviderModels("openai", settings.openai_model || "gpt-5.5");
   loadProviderModels("gemini", settings.gemini_model || "gemini-3-flash-preview");
@@ -359,6 +369,7 @@ function setModelOptions(select, models, selected) {
 async function loadProviderModels(provider, selected) {
   const data = await api(`/api/models?provider=${encodeURIComponent(provider)}`);
   const payload = data.models || {};
+  modelOptionsByProvider[provider] = payload.models || [];
   if (provider === "openai") {
     setModelOptions(els.openaiModel, payload.models || [], selected);
     els.openaiModelsStatus.textContent = `Models: ${payload.source || "unknown"}${payload.error ? ` (${payload.error})` : ""}`;
@@ -373,6 +384,7 @@ async function loadProviderModels(provider, selected) {
     setModelOptions(els.codexModel, payload.models || [], selected);
     updateProviderSummary();
   }
+  renderComposerModelOptions();
 }
 
 async function loadCodexStatus() {
@@ -395,6 +407,42 @@ function providerSettingsPayload() {
   };
 }
 
+function composerOverrides() {
+  const provider = els.composerProvider.value || settings.provider || "local";
+  return {
+    provider,
+    model: els.composerModel.value || "",
+    reasoning_effort: els.reasoningEffort.value || "auto",
+  };
+}
+
+function renderComposerProviderOptions() {
+  const options = Array.from(els.provider.options).map((option) => {
+    const selected = option.value === (settings.provider || "local") ? " selected" : "";
+    return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.textContent)}</option>`;
+  });
+  els.composerProvider.innerHTML = options.join("");
+  renderComposerModelOptions();
+}
+
+function renderComposerModelOptions() {
+  const provider = els.composerProvider.value || settings.provider || "local";
+  let models = modelOptionsByProvider[provider] || [];
+  let selected = "";
+  if (provider === "openai") selected = settings.openai_model || "gpt-5.5";
+  if (provider === "gemini") selected = settings.gemini_model || "gemini-3-flash-preview";
+  if (provider === "codex") selected = settings.codex_model || "";
+  if (provider === "local_openai") {
+    selected = settings.local_openai_model || "";
+    models = selected ? [{ id: selected, label: selected }] : [];
+  }
+  if (provider === "local") {
+    models = [{ id: "", label: "No model" }];
+  }
+  setModelOptions(els.composerModel, models, selected);
+  updateContextUsage();
+}
+
 function activeProviderLabel(provider = els.provider.value) {
   const option = Array.from(els.provider.options).find((item) => item.value === provider);
   return option ? option.textContent : provider;
@@ -409,6 +457,95 @@ function renderProviderTestStatus() {
   }
   els.providerTestStatus.classList.add(result.ok ? "ok" : "error");
   els.providerTestStatus.textContent = result.message;
+}
+
+function renderAttachments() {
+  els.attachmentList.innerHTML = pendingAttachments.map((file, index) => {
+    return `<button type="button" class="attachment-chip" data-index="${index}" title="Remove ${escapeHtml(file.name)}">
+      <span>${escapeHtml(file.name)}</span>
+      <small>${formatBytes(file.size)}</small>
+    </button>`;
+  }).join("");
+  els.attachmentList.querySelectorAll(".attachment-chip").forEach((button) => {
+    button.addEventListener("click", () => {
+      pendingAttachments.splice(Number(button.dataset.index), 1);
+      renderAttachments();
+      updateContextUsage();
+    });
+  });
+  updateContextUsage();
+}
+
+async function addFiles(files) {
+  const accepted = Array.from(files || []).filter(isSupportedAttachment);
+  const loaded = await Promise.all(accepted.map(readAttachment));
+  pendingAttachments.push(...loaded.filter(Boolean));
+  renderAttachments();
+}
+
+function isSupportedAttachment(file) {
+  const name = file.name.toLowerCase();
+  return file.type.startsWith("image/") || file.type === "application/pdf" || name.endsWith(".pdf") || name.endsWith(".md") || name.endsWith(".txt");
+}
+
+function readAttachment(file) {
+  const maxBytes = file.type.startsWith("image/") || file.type === "application/pdf" ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    els.status.textContent = `${file.name} is too large for inline context.`;
+    return Promise.resolve(null);
+  }
+  const name = file.name.toLowerCase();
+  const isText = file.type.startsWith("text/") || name.endsWith(".md") || name.endsWith(".txt");
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(null);
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      if (isText) {
+        resolve({ name: file.name, type: file.type || "text/plain", size: file.size, kind: "text", text: result.slice(0, 200000) });
+        return;
+      }
+      const data = result.includes(",") ? result.split(",", 2)[1] : result;
+      const kind = (file.type || "").startsWith("image/") ? "image" : "pdf";
+      resolve({ name: file.name, type: file.type || (kind === "pdf" ? "application/pdf" : "application/octet-stream"), size: file.size, kind, data });
+    };
+    if (isText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
+  });
+}
+
+function updateContextUsage() {
+  if (!els.contextUsage) return;
+  const chars = messages.reduce((total, item) => total + String(item.content || "").length, 0)
+    + els.input.value.length
+    + pendingAttachments.reduce((total, file) => total + (file.text ? file.text.length : Math.ceil((file.size || 0) / 4)), 0);
+  const tokens = Math.ceil(chars / 4);
+  const limit = contextLimitFor(composerOverrides());
+  const pct = Math.min(100, Math.round((tokens / limit) * 100));
+  els.contextUsage.textContent = `${formatTokens(tokens)} / ${formatTokens(limit)}`;
+  els.contextUsage.title = `Estimated context window: ${pct}% used`;
+}
+
+function contextLimitFor(overrides) {
+  const model = String(overrides.model || "").toLowerCase();
+  const provider = overrides.provider;
+  if (model.includes("gpt-5.5") || model.includes("gemini-3") || model.includes("gemini-2.5")) return 1000000;
+  if (model.includes("mini")) return 400000;
+  if (provider === "codex") return 258400;
+  if (provider === "local_openai") return 128000;
+  return 128000;
+}
+
+function formatTokens(value) {
+  if (value >= 1000000) return `${(value / 1000000).toFixed(value % 1000000 ? 1 : 0)}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(value % 1000 ? 1 : 0)}k`;
+  return String(value);
+}
+
+function formatBytes(value) {
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${Math.ceil(value / 1024)} KB`;
+  return `${value} B`;
 }
 
 async function loadSessions() {
@@ -429,6 +566,7 @@ async function loadSessions() {
       els.title.textContent = data.session.title;
       renderMessages();
       renderTools();
+      updateContextUsage();
       loadSessions();
     });
   });
@@ -491,24 +629,35 @@ async function newSession() {
   currentSessionId = data.session.session_id;
   messages = [];
   toolCalls = [];
+  pendingAttachments = [];
   els.title.textContent = data.session.title;
   renderMessages();
   renderTools();
+  renderAttachments();
   await loadSessions();
 }
 
 async function sendMessage(event) {
   event.preventDefault();
   const text = els.input.value.trim();
-  if (!text) return;
+  if (!text && !pendingAttachments.length) return;
+  const attachments = pendingAttachments.slice();
   els.input.value = "";
-  messages.push({ role: "user", content: text });
+  pendingAttachments = [];
+  renderAttachments();
+  const visibleText = attachments.length ? `${text || "(attached files)"}\n\nAttached: ${attachments.map((file) => file.name).join(", ")}` : text;
+  messages.push({ role: "user", content: visibleText });
   renderMessages();
   els.status.textContent = "Thinking";
   try {
     const data = await api("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ session_id: currentSessionId, message: text }),
+      body: JSON.stringify({
+        session_id: currentSessionId,
+        message: text,
+        attachments,
+        options: composerOverrides(),
+      }),
     });
     currentSessionId = data.session.session_id;
     messages = data.messages;
@@ -525,6 +674,7 @@ async function sendMessage(event) {
     renderMessages();
   } finally {
     els.status.textContent = "Ready";
+    updateContextUsage();
     els.input.focus();
   }
 }
@@ -545,6 +695,15 @@ els.provider.addEventListener("change", () => {
 els.geminiModel.addEventListener("change", updateProviderSummary);
 els.codexModel.addEventListener("change", updateProviderSummary);
 els.openaiModel.addEventListener("change", updateProviderSummary);
+els.composerProvider.addEventListener("change", renderComposerModelOptions);
+els.composerModel.addEventListener("change", updateContextUsage);
+els.reasoningEffort.addEventListener("change", updateContextUsage);
+els.input.addEventListener("input", updateContextUsage);
+els.attachFiles.addEventListener("click", () => els.fileInput.click());
+els.fileInput.addEventListener("change", async () => {
+  await addFiles(els.fileInput.files);
+  els.fileInput.value = "";
+});
 els.compatiblePreset.addEventListener("change", () => {
   const preset = compatiblePresets[els.compatiblePreset.value];
   if (!preset) return;

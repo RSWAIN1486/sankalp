@@ -94,3 +94,8 @@ refresh the Codex model dropdown.
 Use `Test hello` in Settings to send a tiny prompt through the currently selected provider,
 model, API key, or OpenAI-compatible endpoint. The check does not create a chat session and
 can validate unsaved form values before you commit them.
+
+The chat composer also has per-message provider, model, and reasoning controls. These apply
+to the next message without changing saved Settings. The attach button accepts `.md`, `.txt`,
+`.pdf`, and image files; text files are added as text context, while image/PDF payloads are
+sent inline to providers that support those media inputs.

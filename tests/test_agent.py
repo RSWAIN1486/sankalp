@@ -9,7 +9,7 @@ from sankalp.tools import ToolRegistry
 
 
 class FakeLLM:
-    def complete(self, messages, memory_context, previous_response_id=None):
+    def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
         return {
             "text": f"memory={bool(memory_context)} latest={messages[-1]['content']}",
             "response_id": "resp_test",
@@ -38,6 +38,28 @@ class AgentTests(unittest.TestCase):
             result = agent.turn(None, "What should Sankalp use for memory?")
 
             self.assertIn("memory=True", result["message"]["content"])
+
+    def test_turn_passes_attachments_and_options_to_llm(self):
+        class CaptureLLM:
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                self.options = options
+                self.attachments = attachments
+                return {"text": "ok", "response_id": None}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            llm = CaptureLLM()
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), llm)
+
+            result = agent.turn(None, "summarize", {
+                "options": {"provider": "local_openai", "model": "qwen"},
+                "attachments": [{"name": "note.md", "kind": "text", "text": "# Hi"}],
+            })
+
+            self.assertEqual(result["message"]["content"], "ok")
+            self.assertEqual(llm.options["model"], "qwen")
+            self.assertEqual(llm.attachments[0]["name"], "note.md")
 
 
 if __name__ == "__main__":

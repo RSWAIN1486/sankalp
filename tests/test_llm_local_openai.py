@@ -88,6 +88,46 @@ class LocalOpenAITests(unittest.TestCase):
         self.assertEqual(result["model"], "hello-model")
         self.assertEqual(seen["body"]["messages"][-1]["content"], "Reply with exactly: hello")
 
+    def test_local_openai_sends_image_attachment_as_content_part(self):
+        seen = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                return
+
+            def do_POST(self):
+                length = int(self.headers.get("content-length", "0"))
+                seen["body"] = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = json.dumps({"id": "vision_test", "choices": [{"message": {"content": "saw it"}}]}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            result = LLMAdapter()._local_openai(
+                {
+                    "local_openai_base_url": f"http://127.0.0.1:{server.server_port}/v1",
+                    "local_openai_model": "vision-model",
+                },
+                [{"role": "user", "content": "describe"}],
+                "",
+                [{"name": "image.png", "kind": "image", "type": "image/png", "data": "aW1hZ2U="}],
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(result["text"], "saw it")
+        content = seen["body"]["messages"][-1]["content"]
+        self.assertEqual(content[0]["type"], "text")
+        self.assertEqual(content[1]["type"], "image_url")
+        self.assertTrue(content[1]["image_url"]["url"].startswith("data:image/png;base64,"))
+
 
 if __name__ == "__main__":
     unittest.main()
