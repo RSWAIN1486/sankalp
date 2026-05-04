@@ -269,7 +269,21 @@ p {
   gap: 6px;
 }
 
+.session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.session-row.active {
+  background: var(--soft);
+  border-color: #c6ddd5;
+}
+
 .session {
+  width: 100%;
   border: 1px solid transparent;
   background: transparent;
   text-align: left;
@@ -279,15 +293,55 @@ p {
   cursor: pointer;
 }
 
-.session.active {
-  background: var(--soft);
-  border-color: #c6ddd5;
+.session span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .session small {
   display: block;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.session-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  padding-right: 5px;
+}
+
+.session-row:hover .session-actions,
+.session-row.active .session-actions {
+  opacity: 1;
+}
+
+.session-actions button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.session-actions button:hover {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.session-actions svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .chat-shell {
@@ -332,9 +386,82 @@ p {
   align-self: flex-end;
   background: var(--accent);
   color: var(--accent-ink);
-  padding: 11px 13px;
+  padding: 11px 13px 44px;
   border-radius: 8px;
   max-width: min(760px, 88%);
+  position: relative;
+}
+
+.message-content {
+  min-width: 0;
+}
+
+.message-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  display: none;
+  gap: 6px;
+}
+
+.message.user:hover .message-actions,
+.message.user:focus-within .message-actions {
+  display: flex;
+}
+
+.message-actions button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.message-actions button:hover,
+.message-actions button.copied {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.message-actions svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.message.editing {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  width: min(760px, 88%);
+}
+
+.edit-query {
+  width: 100%;
+  min-height: 110px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  resize: vertical;
+  outline: none;
+}
+
+.edit-query:focus {
+  border-color: var(--accent);
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .message.assistant {
@@ -344,6 +471,88 @@ p {
   padding: 13px 14px;
   border-radius: 8px;
   max-width: min(820px, 92%);
+}
+
+.message.assistant p {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.message.assistant p:last-child,
+.message.assistant ul:last-child,
+.message.assistant ol:last-child,
+.message.assistant pre:last-child {
+  margin-bottom: 0;
+}
+
+.message.assistant ul,
+.message.assistant ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.message.assistant li {
+  margin: 4px 0;
+}
+
+.message.assistant a {
+  color: var(--accent);
+}
+
+.message.assistant code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--soft);
+  border-radius: 5px;
+  padding: 1px 4px;
+}
+
+.message.assistant pre {
+  margin: 0 0 10px;
+  padding: 12px;
+  background: #202523;
+  color: #f7f7f4;
+  border-radius: 8px;
+  overflow: auto;
+}
+
+.message.assistant pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.message-status,
+.message-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid #c6ddd5;
+  background: var(--soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.message-tools {
+  margin-left: 6px;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #c6ddd5;
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .composer {

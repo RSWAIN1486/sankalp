@@ -1,9 +1,11 @@
 import json
+import os
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from unittest.mock import patch
 
 import sankalp.settings as settings_module
 from sankalp.agent.llm import LLMAdapter
@@ -87,6 +89,46 @@ class LocalOpenAITests(unittest.TestCase):
         self.assertEqual(result["text"], "hello")
         self.assertEqual(result["model"], "hello-model")
         self.assertEqual(seen["body"]["messages"][-1]["content"], "Reply with exactly: hello")
+
+    def test_title_for_query_uses_local_openai_provider(self):
+        seen = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                return
+
+            def do_POST(self):
+                length = int(self.headers.get("content-length", "0"))
+                seen["body"] = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = json.dumps({"id": "title_test", "choices": [{"message": {"content": "Election Results"}}]}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        old_path = settings_module.SETTINGS_PATH
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                settings_module.SETTINGS_PATH = Path(tmp) / "settings.json"
+                settings_module.save_settings({
+                    "provider": "local_openai",
+                    "local_openai_base_url": f"http://127.0.0.1:{server.server_port}/v1",
+                    "local_openai_model": "title-model",
+                })
+                with patch.dict(os.environ, {"OPENAI_API_KEY": "", "GEMINI_API_KEY": ""}):
+                    title = LLMAdapter().title_for_query("can you check for the latest election results today")
+        finally:
+            settings_module.SETTINGS_PATH = old_path
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(title, "Election Results")
+        self.assertEqual(seen["body"]["model"], "title-model")
+        self.assertIn("3 to 5 words", seen["body"]["messages"][-1]["content"])
 
     def test_local_openai_sends_image_attachment_as_content_part(self):
         seen = {}

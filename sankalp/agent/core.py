@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 from dataclasses import asdict
 from typing import Any
@@ -8,6 +9,7 @@ from typing import Any
 from sankalp.agent.llm import LLMAdapter
 from sankalp.memory import ObsidianMemory
 from sankalp.sessions import Session, SessionStore
+from sankalp.sessions.store import title_from_query
 from sankalp.tools import ToolRegistry
 
 
@@ -23,10 +25,19 @@ class Agent:
         attachments = list(request.get("attachments") or [])
         options = dict(request.get("options") or {})
         session = self.sessions.get(session_id)
+        edit_index = request.get("edit_index")
+        if isinstance(edit_index, int) and 0 <= edit_index < len(session.messages):
+            session.messages = session.messages[:edit_index]
+            session.tool_calls = []
+            session.previous_response_id = None
+        should_title = not session.messages and session.title_source != "manual"
         content = content.strip()
         stored_content = self._stored_user_content(content, attachments)
         session.messages.append({"role": "user", "content": stored_content})
         self.memory.append_session_turn(session.session_id, "user", stored_content)
+        if should_title:
+            session.title = title_from_query(content)
+            session.title_source = "fallback"
 
         routed = self._route_explicit_tool(session, content)
         if routed is not None:
@@ -45,6 +56,8 @@ class Agent:
         session.messages.append({"role": "assistant", "content": answer})
         self.memory.append_session_turn(session.session_id, "assistant", answer)
         self.sessions.save(session)
+        if should_title:
+            self._generate_title_async(session.session_id, content, options)
         return self._payload(session, answer)
 
     def _route_explicit_tool(self, session: Session, content: str) -> str | None:
@@ -102,6 +115,16 @@ class Agent:
         names = ", ".join(str(item.get("name") or "attachment") for item in attachments)
         base = content or "(attached files)"
         return f"{base}\n\nAttached: {names}"
+
+    def _generate_title_async(self, session_id: str, content: str, options: dict[str, Any]) -> None:
+        def worker() -> None:
+            try:
+                title = self.llm.title_for_query(content, options)
+                self.sessions.update_generated_title(session_id, title)
+            except Exception:
+                return
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _memory_context(self, query: str, hits: list[Any]) -> str:
         profile = self.memory.read_profile()

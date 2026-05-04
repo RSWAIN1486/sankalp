@@ -2,16 +2,59 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import urllib.request
 from typing import Any
 
 from sankalp.config import MODEL, ROOT
+from sankalp.sessions.store import title_from_query
 from sankalp.settings import load_settings
 
 
 class LLMAdapter:
+    def title_for_query(self, query: str, options: dict[str, Any] | None = None) -> str:
+        settings = load_settings(include_secrets=True)
+        fallback = title_from_query(query)
+        prompt = (
+            "Create a short chat title for this user message.\n"
+            "Rules: 3 to 5 words. No quotes. No punctuation. Return only the title.\n\n"
+            f"User message: {query.strip()[:1200]}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+
+        api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            try:
+                title_settings = dict(settings)
+                title_settings["openai_model"] = "gpt-5.4-nano"
+                title_settings["reasoning_effort"] = "none"
+                result = self._openai(api_key, title_settings, messages, "", None)
+                return self._clean_title(result.get("text") or "", fallback)
+            except Exception:
+                pass
+
+        if settings.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY"):
+            try:
+                title_settings = dict(settings)
+                title_settings["gemini_model"] = "gemini-2.5-flash-lite"
+                title_settings["reasoning_effort"] = "none"
+                result = self._gemini(title_settings, messages, "")
+                return self._clean_title(result.get("text") or "", fallback)
+            except Exception:
+                pass
+
+        if (settings.get("local_openai_base_url") or "").strip() and (settings.get("local_openai_model") or "").strip():
+            try:
+                result = self._local_openai(settings, messages, "")
+                text = str(result.get("text") or "")
+                if not text.startswith("OpenAI-compatible endpoint provider is selected"):
+                    return self._clean_title(text, fallback)
+            except Exception:
+                pass
+        return fallback
+
     def test_provider(self, update: dict[str, Any]) -> dict[str, Any]:
         settings = load_settings(include_secrets=True)
         for key, value in update.items():
@@ -397,6 +440,16 @@ class LLMAdapter:
         if provider == "local_openai":
             return str(settings.get("local_openai_model") or "")
         return "local fallback"
+
+    def _clean_title(self, value: str, fallback: str) -> str:
+        lines = [line.strip() for line in str(value).splitlines() if line.strip()]
+        title = lines[0] if lines else ""
+        title = re.sub(r"^(chat\s+)?title\s*:\s*", "", title, flags=re.I)
+        title = title.strip().strip("\"'`").strip(" .,:;!?")
+        words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'&/-]*", title)
+        if not words:
+            return fallback
+        return " ".join(words[:5])[:64]
 
     def _fallback(self, messages: list[dict[str, str]], memory_context: str) -> str:
         latest = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")

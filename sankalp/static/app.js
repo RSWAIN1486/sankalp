@@ -5,6 +5,7 @@ let settings = {};
 let providerTestResults = {};
 let pendingAttachments = [];
 let modelOptionsByProvider = {};
+let composerPreference = loadComposerPreference();
 
 const compatiblePresets = {
   custom: { baseUrl: "http://localhost:2276/v1", model: "" },
@@ -132,10 +133,90 @@ async function api(path, options = {}) {
 }
 
 function renderMessages() {
-  els.messages.innerHTML = messages.map((message) => {
-    return `<article class="message ${message.role}">${escapeHtml(message.content)}</article>`;
+  els.messages.innerHTML = messages.map((message, index) => {
+    const pending = message.pending ? `<div class="message-status"><span class="spinner"></span>${escapeHtml(message.status || "Thinking")}</div>` : "";
+    const tools = message.tools ? `<div class="message-tools">${escapeHtml(message.tools)}</div>` : "";
+    const content = message.role === "assistant" ? renderMarkdown(message.content || "") : escapeHtml(message.content || "");
+    const actions = message.role === "user" ? `<div class="message-actions">
+      <button type="button" class="message-copy" data-index="${index}" title="Copy" aria-label="Copy">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+      <button type="button" class="message-edit" data-index="${index}" title="Edit and resend" aria-label="Edit and resend">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z"/></svg>
+      </button>
+    </div>` : "";
+    return `<article class="message ${message.role}${message.pending ? " pending" : ""}" data-index="${index}"><div class="message-content">${content}</div>${actions}${pending}${tools}</article>`;
   }).join("");
+  els.messages.querySelectorAll(".message-edit").forEach((button) => {
+    button.addEventListener("click", () => startMessageEdit(Number(button.dataset.index)));
+  });
+  els.messages.querySelectorAll(".message-copy").forEach((button) => {
+    button.addEventListener("click", () => copyMessage(Number(button.dataset.index), button));
+  });
   els.messages.scrollTop = els.messages.scrollHeight;
+}
+
+async function copyMessage(index, button) {
+  const message = messages[index];
+  if (!message) return;
+  await navigator.clipboard.writeText(stripAttachmentLine(message.content || ""));
+  button.classList.add("copied");
+  setTimeout(() => button.classList.remove("copied"), 900);
+}
+
+function startMessageEdit(index) {
+  const message = messages[index];
+  if (!message || message.role !== "user") return;
+  const article = els.messages.querySelector(`.message[data-index="${index}"]`);
+  if (!article) return;
+  article.classList.add("editing");
+  article.innerHTML = `<textarea class="edit-query" rows="4">${escapeHtml(stripAttachmentLine(message.content || ""))}</textarea>
+    <div class="edit-actions">
+      <button type="button" class="secondary" data-edit-cancel>Cancel</button>
+      <button type="button" class="primary" data-edit-send>Send</button>
+    </div>`;
+  const textarea = article.querySelector(".edit-query");
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  article.querySelector("[data-edit-cancel]").addEventListener("click", renderMessages);
+  article.querySelector("[data-edit-send]").addEventListener("click", () => resendEditedMessage(index, textarea.value));
+}
+
+function stripAttachmentLine(content) {
+  return String(content).replace(/\n\nAttached:.*$/s, "").trim();
+}
+
+function renderMarkdown(markdown) {
+  const blocks = [];
+  let text = String(markdown || "");
+  text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
+    const token = `@@CODE${blocks.length}@@`;
+    blocks.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`);
+    return token;
+  });
+  let html = escapeHtml(text);
+  html = html.replace(/^### (.*)$/gm, "<h4>$1</h4>");
+  html = html.replace(/^## (.*)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^# (.*)$/gm, "<h2>$1</h2>");
+  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  html = html.replace(/^(?:- |\* )(.*(?:\n(?:- |\* ).*)*)/gm, (match) => {
+    const items = match.split("\n").map((line) => `<li>${line.replace(/^(- |\* )/, "")}</li>`).join("");
+    return `<ul>${items}</ul>`;
+  });
+  html = html.replace(/^(?:\d+\. )(.*(?:\n(?:\d+\. ).*)*)/gm, (match) => {
+    const items = match.split("\n").map((line) => `<li>${line.replace(/^\d+\. /, "")}</li>`).join("");
+    return `<ol>${items}</ol>`;
+  });
+  html = html.split(/\n{2,}/).map((part) => {
+    if (/^<h[234]|^<ul>|^<ol>|^@@CODE/.test(part)) return part;
+    return `<p>${part.replace(/\n/g, "<br>")}</p>`;
+  }).join("");
+  blocks.forEach((block, index) => {
+    html = html.replace(`@@CODE${index}@@`, block);
+  });
+  return html;
 }
 
 function renderTools() {
@@ -416,19 +497,36 @@ function composerOverrides() {
   };
 }
 
+function loadComposerPreference() {
+  try {
+    return JSON.parse(localStorage.getItem("sankalp.composer") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveComposerPreference() {
+  composerPreference = composerOverrides();
+  localStorage.setItem("sankalp.composer", JSON.stringify(composerPreference));
+}
+
 function renderComposerProviderOptions() {
+  const activeProvider = composerPreference.provider || settings.provider || "local";
   const options = Array.from(els.provider.options).map((option) => {
-    const selected = option.value === (settings.provider || "local") ? " selected" : "";
+    const selected = option.value === activeProvider ? " selected" : "";
     return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.textContent)}</option>`;
   });
   els.composerProvider.innerHTML = options.join("");
+  if (composerPreference.reasoning_effort) {
+    els.reasoningEffort.value = composerPreference.reasoning_effort;
+  }
   renderComposerModelOptions();
 }
 
 function renderComposerModelOptions() {
   const provider = els.composerProvider.value || settings.provider || "local";
   let models = modelOptionsByProvider[provider] || [];
-  let selected = "";
+  let selected = composerPreference.provider === provider ? composerPreference.model || "" : "";
   if (provider === "openai") selected = settings.openai_model || "gpt-5.5";
   if (provider === "gemini") selected = settings.gemini_model || "gemini-3-flash-preview";
   if (provider === "codex") selected = settings.codex_model || "";
@@ -438,6 +536,9 @@ function renderComposerModelOptions() {
   }
   if (provider === "local") {
     models = [{ id: "", label: "No model" }];
+  }
+  if (composerPreference.provider === provider && composerPreference.model) {
+    selected = composerPreference.model;
   }
   setModelOptions(els.composerModel, models, selected);
   updateContextUsage();
@@ -552,10 +653,20 @@ async function loadSessions() {
   const data = await api("/api/sessions");
   els.sessions.innerHTML = data.sessions.map((session) => {
     const active = session.session_id === currentSessionId ? " active" : "";
-    return `<button class="session${active}" data-id="${session.session_id}">
-      ${escapeHtml(session.title)}
-      <small>${session.message_count} messages</small>
-    </button>`;
+    return `<div class="session-row${active}" data-id="${session.session_id}">
+      <button class="session" data-id="${session.session_id}">
+        <span>${escapeHtml(session.title)}</span>
+        <small>${session.message_count} messages</small>
+      </button>
+      <div class="session-actions">
+        <button type="button" data-action="rename" title="Rename session" aria-label="Rename session">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z"/></svg>
+        </button>
+        <button type="button" data-action="delete" title="Delete session" aria-label="Delete session">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/></svg>
+        </button>
+      </div>
+    </div>`;
   }).join("");
   els.sessions.querySelectorAll(".session").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -568,6 +679,31 @@ async function loadSessions() {
       renderTools();
       updateContextUsage();
       loadSessions();
+    });
+  });
+  els.sessions.querySelectorAll(".session-actions button").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const row = button.closest(".session-row");
+      const sessionId = row.dataset.id;
+      if (button.dataset.action === "rename") {
+        const current = row.querySelector(".session span").textContent;
+        const title = window.prompt("Rename session", current);
+        if (!title) return;
+        await api("/api/session/rename", { method: "POST", body: JSON.stringify({ session_id: sessionId, title }) });
+      } else {
+        if (!window.confirm("Delete this session?")) return;
+        await api("/api/session/delete", { method: "POST", body: JSON.stringify({ session_id: sessionId }) });
+        if (currentSessionId === sessionId) {
+          currentSessionId = null;
+          messages = [];
+          toolCalls = [];
+          els.title.textContent = "New session";
+          renderMessages();
+          renderTools();
+        }
+      }
+      await loadSessions();
     });
   });
 }
@@ -647,35 +783,138 @@ async function sendMessage(event) {
   renderAttachments();
   const visibleText = attachments.length ? `${text || "(attached files)"}\n\nAttached: ${attachments.map((file) => file.name).join(", ")}` : text;
   messages.push({ role: "user", content: visibleText });
+  messages.push({ role: "assistant", content: "", pending: true, status: "Thinking" });
   renderMessages();
   els.status.textContent = "Thinking";
   try {
-    const data = await api("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        session_id: currentSessionId,
-        message: text,
-        attachments,
-        options: composerOverrides(),
-      }),
+    await streamChat({
+      session_id: currentSessionId,
+      message: text,
+      attachments,
+      options: composerOverrides(),
     });
+  } catch (error) {
+    const pending = messages.findLast((message) => message.pending);
+    if (pending) {
+      pending.pending = false;
+      pending.content = `Request failed: ${error.message}`;
+    } else {
+      messages.push({ role: "assistant", content: `Request failed: ${error.message}` });
+    }
+    renderMessages();
+  } finally {
+    els.status.textContent = "Ready";
+    updateContextUsage();
+    els.input.focus();
+  }
+}
+
+async function resendEditedMessage(index, value) {
+  const text = value.trim();
+  if (!text) return;
+  messages = messages.slice(0, index);
+  toolCalls = [];
+  messages.push({ role: "user", content: text });
+  messages.push({ role: "assistant", content: "", pending: true, status: "Thinking" });
+  renderMessages();
+  renderTools();
+  els.status.textContent = "Thinking";
+  try {
+    await streamChat({
+      session_id: currentSessionId,
+      message: text,
+      attachments: [],
+      options: composerOverrides(),
+      edit_index: index,
+    });
+  } catch (error) {
+    const pending = messages.findLast((message) => message.pending);
+    if (pending) {
+      pending.pending = false;
+      pending.content = `Request failed: ${error.message}`;
+    }
+    renderMessages();
+  } finally {
+    els.status.textContent = "Ready";
+    updateContextUsage();
+    els.input.focus();
+  }
+}
+
+async function streamChat(payload) {
+  const response = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const part of parts) handleStreamEvent(part);
+  }
+  if (buffer.trim()) handleStreamEvent(buffer);
+}
+
+function handleStreamEvent(raw) {
+  const eventLine = raw.split("\n").find((line) => line.startsWith("event: "));
+  const dataLine = raw.split("\n").find((line) => line.startsWith("data: "));
+  if (!eventLine || !dataLine) return;
+  const event = eventLine.slice(7).trim();
+  const data = JSON.parse(dataLine.slice(6));
+  const pending = messages.findLast((message) => message.pending);
+  if (event === "status" && pending) {
+    pending.status = data.detail || data.label || "Thinking";
+    renderMessages();
+  }
+  if (event === "session") {
     currentSessionId = data.session.session_id;
-    messages = data.messages;
+    toolCalls = data.tool_calls || [];
+    els.title.textContent = data.session.title;
+    if (pending && toolCalls.length) pending.tools = `${toolCalls.length} activity item${toolCalls.length === 1 ? "" : "s"}`;
+    renderTools();
+    renderMessages();
+  }
+  if (event === "delta" && pending) {
+    pending.content += data.text || "";
+    renderMessages();
+  }
+  if (event === "done") {
+    currentSessionId = data.session.session_id;
+    messages = data.messages || messages.map((message) => ({ role: message.role, content: message.content }));
     toolCalls = data.tool_calls || [];
     els.title.textContent = data.session.title;
     renderMessages();
     renderTools();
     renderMemory(data.memory);
     if (data.memory_status) renderMemoryStatus(data.memory_status);
-    await loadProfile();
+    loadProfile();
+    loadSessions();
+    setTimeout(refreshCurrentSessionTitle, 1200);
+    setTimeout(refreshCurrentSessionTitle, 5000);
+  }
+  if (event === "error" && pending) {
+    pending.pending = false;
+    pending.content = data.error || "Request failed.";
+    renderMessages();
+  }
+}
+
+async function refreshCurrentSessionTitle() {
+  if (!currentSessionId) return;
+  try {
+    const data = await api(`/api/session?id=${encodeURIComponent(currentSessionId)}`);
+    if (!data.session || data.session.session_id !== currentSessionId) return;
+    els.title.textContent = data.session.title;
     await loadSessions();
   } catch (error) {
-    messages.push({ role: "assistant", content: `Request failed: ${error.message}` });
-    renderMessages();
-  } finally {
-    els.status.textContent = "Ready";
-    updateContextUsage();
-    els.input.focus();
+    // Title refresh is opportunistic; the chat turn has already completed.
   }
 }
 
@@ -695,9 +934,18 @@ els.provider.addEventListener("change", () => {
 els.geminiModel.addEventListener("change", updateProviderSummary);
 els.codexModel.addEventListener("change", updateProviderSummary);
 els.openaiModel.addEventListener("change", updateProviderSummary);
-els.composerProvider.addEventListener("change", renderComposerModelOptions);
-els.composerModel.addEventListener("change", updateContextUsage);
-els.reasoningEffort.addEventListener("change", updateContextUsage);
+els.composerProvider.addEventListener("change", () => {
+  renderComposerModelOptions();
+  saveComposerPreference();
+});
+els.composerModel.addEventListener("change", () => {
+  updateContextUsage();
+  saveComposerPreference();
+});
+els.reasoningEffort.addEventListener("change", () => {
+  updateContextUsage();
+  saveComposerPreference();
+});
 els.input.addEventListener("input", updateContextUsage);
 els.attachFiles.addEventListener("click", () => els.fileInput.click());
 els.fileInput.addEventListener("change", async () => {

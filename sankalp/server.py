@@ -4,6 +4,7 @@ import json
 import mimetypes
 import traceback
 import subprocess
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -113,12 +114,23 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "attachments": body.get("attachments") or [],
                         "options": body.get("options") or {},
+                        "edit_index": body.get("edit_index"),
                     },
                 )
                 return self._json(response)
+            if parsed.path == "/api/chat/stream":
+                return self._chat_stream()
             if parsed.path == "/api/session/new":
                 session = AGENT.sessions.create()
                 return self._json({"session": session.compact(), "messages": [], "tool_calls": []})
+            if parsed.path == "/api/session/rename":
+                body = self._body()
+                session = AGENT.sessions.rename(str(body.get("session_id") or ""), str(body.get("title") or ""))
+                return self._json({"session": session.compact(), "sessions": AGENT.sessions.list()})
+            if parsed.path == "/api/session/delete":
+                body = self._body()
+                deleted = AGENT.sessions.delete(str(body.get("session_id") or ""))
+                return self._json({"deleted": deleted, "sessions": AGENT.sessions.list()})
             if parsed.path == "/api/settings":
                 body = self._body()
                 settings = save_settings(body)
@@ -171,6 +183,42 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("cache-control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+    def _chat_stream(self) -> None:
+        body = self._body()
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream; charset=utf-8")
+        self.send_header("cache-control", "no-store")
+        self.send_header("connection", "close")
+        self.end_headers()
+
+        def send(event: str, payload: object) -> None:
+            data = json.dumps(payload)
+            self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
+        send("status", {"label": "Thinking", "detail": "Preparing context"})
+        try:
+            response = AGENT.turn(
+                body.get("session_id"),
+                body.get("message", ""),
+                {
+                    "attachments": body.get("attachments") or [],
+                    "options": body.get("options") or {},
+                    "edit_index": body.get("edit_index"),
+                },
+            )
+            send("session", {"session": response["session"], "tool_calls": response.get("tool_calls", [])})
+            text = response["message"]["content"]
+            for index in range(0, len(text), 80):
+                send("delta", {"text": text[index:index + 80]})
+                time.sleep(0.01)
+            send("done", response)
+            self.close_connection = True
+        except Exception as exc:
+            traceback.print_exc()
+            send("error", {"error": str(exc)})
+            self.close_connection = True
 
     def _static(self, relative: str) -> None:
         path = (STATIC_DIR / relative).resolve()

@@ -13,6 +13,12 @@ The v1 shape is intentionally small:
   or OpenAI API providers
 - A user profile panel backed by `People/you.md`
 
+## Docs
+
+- [Architecture](docs/architecture.md)
+- [Features](docs/features.md)
+- [MVP spec](docs/MVP_SPEC.md)
+
 ## Run
 
 ```sh
@@ -82,20 +88,5 @@ the terminal-run server and launch Sankalp from the app so macOS attributes vaul
 the app.
 
 The Settings screen includes `Relaunch with latest code`, which reinstalls the app wrapper
-from the current repo and restarts the backend.
-
-## Provider Models
-
-Settings loads model dropdowns for Gemini, OpenAI, and Codex. Gemini and OpenAI use live
-provider model APIs when keys are configured and fall back to curated current lists. Codex
-uses `codex debug models` after `codex login`; the UI can start `codex login` and then
-refresh the Codex model dropdown.
-
-Use `Test hello` in Settings to send a tiny prompt through the currently selected provider,
-model, API key, or OpenAI-compatible endpoint. The check does not create a chat session and
-can validate unsaved form values before you commit them.
-
-The chat composer also has per-message provider, model, and reasoning controls. These apply
-to the next message without changing saved Settings. The attach button accepts `.md`, `.txt`,
-`.pdf`, and image files; text files are added as text context, while image/PDF payloads are
-sent inline to providers that support those media inputs.
+from this repo and restarts the backend. See [Features](docs/features.md) for the full
+current feature list.

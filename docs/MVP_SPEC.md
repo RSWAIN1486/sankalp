@@ -7,6 +7,9 @@ facts in an Obsidian-readable vault without hiding memory in opaque state.
 
 ## Architecture
 
+See `docs/architecture.md` for the current minimal architecture overview and
+`docs/features.md` for the feature inventory.
+
 1. Agent core
    - Receives a user turn.
    - Retrieves relevant memory snippets.
@@ -70,6 +73,9 @@ The first milestone is complete when the assistant can:
 - Choose Gemini/OpenAI/Codex models from dropdowns populated by live APIs or curated fallbacks.
 - Test the selected provider/model with a tiny backend hello prompt before or after saving.
 - Switch provider/model/reasoning per chat message and attach text, PDF, or image context.
+- Rename/delete sessions and auto-title new sessions with async small-model title generation.
+- Edit and resend a user message by branching from that turn.
+- Show thinking status and progressive response rendering through the streaming chat route.
 - Configure an OpenAI-compatible `/v1` endpoint from the UI.
 - Edit user-authored profile memory and delete wrong inferred traits.
 - Point memory at a real Obsidian vault/workspace and browse its folder tree.
