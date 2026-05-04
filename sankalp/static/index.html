@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sankalp</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">S</div>
+        <div>
+          <h1>Sankalp</h1>
+          <p>Local memory assistant</p>
+        </div>
+      </div>
+      <button id="newSession" class="primary">New chat</button>
+      <div class="list-title">Sessions</div>
+      <div id="sessions" class="sessions"></div>
+    </aside>
+
+    <main class="chat-shell">
+      <header class="topbar">
+        <div>
+          <strong id="sessionTitle">New session</strong>
+          <span id="status">Ready</span>
+        </div>
+      </header>
+      <section id="messages" class="messages"></section>
+      <form id="composer" class="composer">
+        <textarea id="messageInput" rows="2" placeholder="Ask, or type remember: something worth keeping"></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </main>
+
+    <aside class="rightbar">
+      <section>
+        <div class="panel-title">Activity</div>
+        <div id="activity" class="activity empty">No tool calls yet.</div>
+      </section>
+      <section>
+        <div class="panel-title">Memory</div>
+        <div id="memory" class="memory"></div>
+      </section>
+    </aside>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
