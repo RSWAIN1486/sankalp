@@ -29,6 +29,8 @@ Routes:
 - `GET /api/session?id=<id>` loads one session transcript and tool log.
 - `GET /api/memory` lists recent Markdown notes.
 - `GET /api/memory/tree` returns a folder/note tree for the configured vault workspace.
+- `GET /api/memory/folders` returns all folders for the workspace dropdown.
+- `GET /api/memory/children?folder=<path>` returns immediate children of one folder.
 - `GET /api/obsidian/vaults` discovers local Obsidian vault paths from Obsidian's macOS
   registry when available.
 - `GET /api/macos/status` reports whether the local macOS app wrapper is installed.
@@ -41,6 +43,8 @@ Routes:
 - `POST /api/settings` updates provider, model, and optional API key settings.
 - `POST /api/macos/install-app` creates `~/Applications/Sankalp.app`.
 - `POST /api/macos/open-full-disk-access` opens the macOS Full Disk Access settings pane.
+- `POST /api/app/relaunch` reinstalls the app wrapper and restarts the backend.
+- `POST /api/memory/open` opens a Markdown note in Obsidian or a folder in Finder.
 
 Decision: stdlib HTTP is enough for the first milestone. A framework would add more
 surface area before routing, auth, middleware, or async behavior need it.
@@ -160,10 +164,19 @@ browsing/retrieval to a workspace subfolder. On macOS, Obsidian's registry is re
 process cannot read a vault because of macOS privacy permissions, the backend returns an
 access error instead of crashing.
 
+The workspace subfolder selector is generated from readable vault directories. The right
+folder panel shows immediate children of the selected folder. Markdown notes are opened with
+`obsidian://open?vault=<vault-name>&file=<note-path>`; folders open in Finder because
+Obsidian does not provide a stable public URI for focusing a folder in the file explorer.
+
 For macOS privacy, Sankalp can install a lightweight app wrapper at
 `~/Applications/Sankalp.app`. Full Disk Access must still be granted manually by the user;
 Sankalp can only open the System Settings pane. To make the grant apply to vault reads, the
 server should be launched from `Sankalp.app`, not from Terminal.
+
+Settings exposes an app-management action to relaunch with the latest repo code. It writes
+the current app bundle, starts a delayed replacement process through `Sankalp.app`, and then
+exits the current backend.
 
 Agent-inferred profile traits are intentionally low-confidence. The agent adds a trait
 only for simple first-person signals such as "I prefer..." or "I like...". Each trait is
@@ -216,6 +229,7 @@ The UI uses one left icon rail and separate full main screens:
 - Memory: full-page recent-note viewer.
 - Memory: vault source, discovered vaults, workspace folder tree, and recent notes.
 - Settings: provider selection, provider-specific fields, and setup guide.
+- Settings: provider setup plus app relaunch controls.
 
 The frontend uses plain browser APIs and no build step.
 

@@ -56,6 +56,8 @@ const els = {
   activity: document.querySelector("#activity"),
   memory: document.querySelector("#memory"),
   memoryTree: document.querySelector("#memoryTree"),
+  folderChildren: document.querySelector("#folderChildren"),
+  folderTitle: document.querySelector("#folderTitle"),
   memoryStatus: document.querySelector("#memoryStatus"),
   macosAccess: document.querySelector("#macosAccess"),
   vaultList: document.querySelector("#vaultList"),
@@ -79,6 +81,8 @@ const els = {
   openaiModel: document.querySelector("#openaiModel"),
   saveSettings: document.querySelector("#saveSettings"),
   settingsStatus: document.querySelector("#settingsStatus"),
+  relaunchApp: document.querySelector("#relaunchApp"),
+  appStatus: document.querySelector("#appStatus"),
   providerStatus: document.querySelector("#providerStatus"),
   form: document.querySelector("#composer"),
   input: document.querySelector("#messageInput"),
@@ -184,6 +188,47 @@ function renderMemoryTree(tree) {
   els.memoryTree.innerHTML = rows.join("") || `<div class="empty">No folders or notes found.</div>`;
 }
 
+function renderFolderOptions(folders, selected) {
+  els.obsidianWorkspacePath.innerHTML = (folders || []).map((folder) => {
+    const selectedAttr = folder.path === selected ? " selected" : "";
+    const label = folder.path || "Whole vault";
+    return `<option value="${escapeHtml(folder.path)}"${selectedAttr}>${escapeHtml(label)}</option>`;
+  }).join("");
+}
+
+function renderFolderChildren(children) {
+  if (!children || children.error) {
+    els.folderTitle.textContent = "Folder";
+    els.folderChildren.innerHTML = `<div class="empty">${escapeHtml(children?.error || "No folder loaded.")}</div>`;
+    return;
+  }
+  els.folderTitle.textContent = children.folder ? `Folder: ${children.folder}` : "Folder: whole vault";
+  els.folderChildren.innerHTML = (children.items || []).map((item) => {
+    const kind = item.type === "directory" ? "Folder" : "Note";
+    const action = item.type === "directory" ? "Open folder" : "Open in Obsidian";
+    return `<div class="tree-row selectable" style="--depth:0" data-kind="${escapeHtml(item.type)}" data-path="${escapeHtml(item.path)}">
+      <strong>${kind}: ${escapeHtml(item.name)}</strong>
+      <span>${escapeHtml(item.path)}</span>
+      <button data-open-path="${escapeHtml(item.path)}">${action}</button>
+    </div>`;
+  }).join("") || `<div class="empty">No subfolders or notes in this folder.</div>`;
+  els.folderChildren.querySelectorAll("[data-kind='directory']").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.tagName === "BUTTON") return;
+      els.obsidianWorkspacePath.value = row.dataset.path;
+      loadFolderChildren(row.dataset.path);
+    });
+  });
+  els.folderChildren.querySelectorAll("button[data-open-path]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api("/api/memory/open", {
+        method: "POST",
+        body: JSON.stringify({ path: button.dataset.openPath }),
+      });
+    });
+  });
+}
+
 function renderVaults(vaults) {
   els.vaultList.innerHTML = (vaults || []).map((vault) => {
     const status = vault.accessible ? "Accessible" : "Blocked by macOS permissions";
@@ -235,7 +280,6 @@ function renderSettings(nextSettings) {
   els.codexModel.value = settings.codex_model || "";
   els.openaiModel.value = settings.openai_model || "gpt-5.5";
   els.obsidianVaultPath.value = settings.obsidian_vault_path || "";
-  els.obsidianWorkspacePath.value = settings.obsidian_workspace_path || "";
   els.geminiKey.placeholder = settings.has_gemini_api_key ? "Gemini key saved" : "Leave blank to keep existing key";
   els.localOpenAIKey.placeholder = settings.has_local_openai_api_key ? "Local key saved" : "Optional";
   els.openaiKey.placeholder = settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key";
@@ -294,6 +338,18 @@ async function loadMemory() {
 async function loadMemoryTree() {
   const data = await api("/api/memory/tree");
   renderMemoryTree(data.tree);
+  renderMemoryStatus(data.status);
+}
+
+async function loadMemoryFolders() {
+  const data = await api("/api/memory/folders");
+  renderFolderOptions(data.folders, settings.obsidian_workspace_path || "");
+  renderMemoryStatus(data.status);
+}
+
+async function loadFolderChildren(folder) {
+  const data = await api(`/api/memory/children?folder=${encodeURIComponent(folder || "")}`);
+  renderFolderChildren(data.children);
   renderMemoryStatus(data.status);
 }
 
@@ -407,6 +463,14 @@ els.saveSettings.addEventListener("click", async () => {
   renderSettings(data.settings);
   els.settingsStatus.textContent = "Saved";
 });
+els.relaunchApp.addEventListener("click", async () => {
+  els.appStatus.textContent = "Relaunching...";
+  els.relaunchApp.disabled = true;
+  await api("/api/app/relaunch", { method: "POST", body: "{}" });
+  setTimeout(() => {
+    window.location.reload();
+  }, 2500);
+});
 els.saveMemoryConfig.addEventListener("click", async () => {
   els.saveMemoryConfig.textContent = "Syncing...";
   const data = await api("/api/settings", {
@@ -418,8 +482,11 @@ els.saveMemoryConfig.addEventListener("click", async () => {
   });
   renderSettings(data.settings);
   if (data.memory_status) renderMemoryStatus(data.memory_status);
-  await Promise.all([loadMemory(), loadMemoryTree(), loadVaults()]);
+  await Promise.all([loadMemory(), loadMemoryFolders(), loadFolderChildren(els.obsidianWorkspacePath.value), loadVaults()]);
   els.saveMemoryConfig.textContent = "Sync vault";
+});
+els.obsidianWorkspacePath.addEventListener("change", () => {
+  loadFolderChildren(els.obsidianWorkspacePath.value);
 });
 els.input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -429,6 +496,7 @@ els.input.addEventListener("keydown", (event) => {
 
 renderProviderGuide();
 
-Promise.all([loadSessions(), loadMemory(), loadMemoryTree(), loadVaults(), loadMacOSStatus(), loadProfile(), loadSettings()]).then(() => {
+Promise.all([loadSessions(), loadSettings()]).then(async () => {
+  await Promise.all([loadMemory(), loadMemoryFolders(), loadFolderChildren(settings.obsidian_workspace_path || ""), loadVaults(), loadMacOSStatus(), loadProfile()]);
   els.input.focus();
 });

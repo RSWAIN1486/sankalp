@@ -98,7 +98,7 @@
               <input id="obsidianVaultPath" type="text" placeholder="/Users/you/Documents/Obsidian Vault">
             </label>
             <label>Workspace subfolder
-              <input id="obsidianWorkspacePath" type="text" placeholder="Projects/Bluestone or Notes">
+              <select id="obsidianWorkspacePath"></select>
             </label>
             <div id="memoryStatus" class="settings-status"></div>
             <div id="macosAccess" class="access-actions"></div>
@@ -106,8 +106,8 @@
             <div id="vaultList" class="vault-list"></div>
           </section>
           <section class="content-block">
-            <h3>Folder Tree</h3>
-            <div id="memoryTree" class="memory-tree"></div>
+            <h3 id="folderTitle">Folder</h3>
+            <div id="folderChildren" class="memory-tree"></div>
           </section>
         </div>
         <section class="content-block">
@@ -199,6 +199,13 @@
           </section>
 
           <section class="content-block">
+            <h3>App</h3>
+            <p class="field-help">Reinstall the app wrapper from this repo and restart the backend with the latest code.</p>
+            <button id="relaunchApp" class="secondary">Relaunch with latest code</button>
+            <div id="appStatus" class="settings-status"></div>
+          </section>
+
+          <section class="content-block guide-block">
             <h3>Provider Setup Guide</h3>
             <div id="providerGuide" class="provider-guide"></div>
           </section>

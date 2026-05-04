@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import mimetypes
 import traceback
+import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
-from sankalp.macos import install_macos_app, macos_status, open_full_disk_access
+from sankalp.macos import install_macos_app, macos_status, open_full_disk_access, relaunch_with_latest_code
 from sankalp.memory import ObsidianMemory
 from sankalp.sessions import SessionStore
 from sankalp.settings import discover_obsidian_vaults, load_settings, save_settings
@@ -71,6 +72,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"memory": AGENT.memory.list_recent(limit=50), "status": AGENT.memory.status()})
             if parsed.path == "/api/memory/tree":
                 return self._json({"tree": AGENT.memory.tree(), "status": AGENT.memory.status()})
+            if parsed.path == "/api/memory/folders":
+                return self._json({"folders": AGENT.memory.folders(), "status": AGENT.memory.status()})
+            if parsed.path == "/api/memory/children":
+                query = parse_qs(parsed.query)
+                folder = (query.get("folder") or [""])[0]
+                return self._json({"children": AGENT.memory.children(folder), "status": AGENT.memory.status()})
             if parsed.path == "/api/obsidian/vaults":
                 return self._json({"vaults": discover_obsidian_vaults()})
             if parsed.path == "/api/macos/status":
@@ -112,6 +119,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"macos": install_macos_app()})
             if parsed.path == "/api/macos/open-full-disk-access":
                 return self._json({"macos": open_full_disk_access()})
+            if parsed.path == "/api/app/relaunch":
+                return self._json({"relaunch": relaunch_with_latest_code()})
+            if parsed.path == "/api/memory/open":
+                body = self._body()
+                result = AGENT.memory.open_target(str(body.get("path") or ""))
+                if result.get("ok"):
+                    if result.get("mode") == "obsidian":
+                        subprocess.Popen(["open", str(result["uri"])])
+                    elif result.get("mode") == "finder":
+                        subprocess.Popen(["open", str(result["path"])])
+                return self._json({"open": result})
             return self._json({"error": "not found"}, status=404)
         except Exception:
             traceback.print_exc()

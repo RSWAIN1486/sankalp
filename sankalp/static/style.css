@@ -182,7 +182,8 @@ p {
 }
 
 .primary,
-.composer button {
+.composer button,
+.secondary {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
@@ -198,6 +199,16 @@ p {
 
 .session-panel .primary {
   width: 100%;
+}
+
+.secondary {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.guide-block {
+  grid-column: 2;
 }
 
 .list-title,
@@ -508,6 +519,22 @@ label select {
   margin-left: calc(var(--depth) * 14px);
 }
 
+.tree-row.selectable {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.tree-row button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
 .guide-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -565,6 +592,10 @@ label select {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
+  }
+
+  .guide-block {
+    grid-column: auto;
   }
 }
 

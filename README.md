@@ -70,7 +70,15 @@ subfolder inside that vault. On macOS, Obsidian vaults under `~/Documents` may r
 Disk Access for the terminal process running Sankalp. If access is blocked, the UI shows the
 permission error and keeps the app running.
 
+Once the vault is readable, the workspace selector is populated from the vault's folder
+tree. Selecting a folder shows its immediate subfolders and notes. Markdown notes can be
+opened directly in Obsidian; folders open in Finder because Obsidian's public URI scheme is
+file-oriented.
+
 On macOS, use the Memory screen to install `~/Applications/Sankalp.app` and open System
 Settings > Privacy & Security > Full Disk Access. Grant access to `Sankalp.app`, then quit
 the terminal-run server and launch Sankalp from the app so macOS attributes vault reads to
 the app.
+
+The Settings screen includes `Relaunch with latest code`, which reinstalls the app wrapper
+from the current repo and restarts the backend.

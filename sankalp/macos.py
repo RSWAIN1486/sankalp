@@ -5,6 +5,9 @@ import platform
 import shutil
 import stat
 import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +37,17 @@ def open_full_disk_access() -> dict[str, Any]:
         return {"ok": False, "error": "Full Disk Access is macOS-specific."}
     subprocess.Popen(["open", FULL_DISK_ACCESS_URL])
     return {"ok": True, "url": FULL_DISK_ACCESS_URL}
+
+
+def relaunch_with_latest_code() -> dict[str, Any]:
+    if is_macos():
+        install_macos_app()
+    threading.Thread(target=_delayed_relaunch, daemon=True).start()
+    return {
+        "ok": True,
+        "app_path": str(APP_PATH),
+        "message": "Sankalp will restart from the app bundle.",
+    }
 
 
 def install_macos_app(app_path: Path = APP_PATH, repo_root: Path = ROOT) -> dict[str, Any]:
@@ -123,6 +137,15 @@ def _codesign(app_path: Path) -> None:
         capture_output=True,
         timeout=60,
     )
+
+
+def _delayed_relaunch() -> None:
+    time.sleep(0.5)
+    if is_macos() and APP_PATH.exists():
+        subprocess.Popen(["open", str(APP_PATH)])
+    else:
+        subprocess.Popen([sys.executable, str(ROOT / "server.py")], cwd=str(ROOT))
+    os._exit(0)
 
 
 def _native_launcher_source(repo_root: Path) -> str:

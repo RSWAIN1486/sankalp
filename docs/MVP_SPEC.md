@@ -70,4 +70,6 @@ The first milestone is complete when the assistant can:
 - Configure an OpenAI-compatible `/v1` endpoint from the UI.
 - Edit user-authored profile memory and delete wrong inferred traits.
 - Point memory at a real Obsidian vault/workspace and browse its folder tree.
+- Select a workspace from discovered vault folders and open notes in Obsidian.
 - Install/open a macOS app wrapper so the user can grant Full Disk Access to Sankalp.
+- Relaunch the app-backed server with the latest repo code from Settings.

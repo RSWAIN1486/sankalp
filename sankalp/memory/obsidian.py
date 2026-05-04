@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 
 @dataclass
@@ -186,6 +187,58 @@ class ObsidianMemory:
             return {"root": str(root), "items": [], "error": error}
         return {"root": str(root), "items": self._tree_items(root, root, 0, max_depth), "error": None}
 
+    def folders(self) -> list[dict[str, str]]:
+        root = self.vault
+        error = self._list_error(root)
+        if error:
+            return []
+        folders = [{"path": "", "name": "Whole vault"}]
+        for path in sorted((p for p in root.rglob("*") if p.is_dir() and not self._has_hidden_part(p)), key=lambda p: str(p).lower()):
+            try:
+                rel = str(path.resolve().relative_to(root.resolve()))
+            except ValueError:
+                continue
+            folders.append({"path": rel, "name": path.name})
+        return folders
+
+    def children(self, folder: str | None = None) -> dict[str, Any]:
+        root = self._safe_folder(folder or self.workspace)
+        error = self._list_error(root)
+        if error:
+            return {"folder": self._display_path(root), "items": [], "error": error}
+        items = []
+        try:
+            children = sorted(root.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except Exception as exc:
+            return {"folder": self._display_path(root), "items": [], "error": str(exc)}
+        for child in children:
+            if child.name.startswith("."):
+                continue
+            if child.is_dir():
+                items.append({"type": "directory", "name": child.name, "path": self._display_path(child)})
+            elif child.suffix.lower() == ".md":
+                items.append({
+                    "type": "file",
+                    "name": child.name,
+                    "path": self._display_path(child),
+                    "obsidian_uri": self.obsidian_uri(self._display_path(child)),
+                })
+        return {"folder": self._display_path(root), "items": items, "error": None}
+
+    def open_target(self, target: str) -> dict[str, Any]:
+        path = self._safe_folder_or_file(target)
+        if not path.exists():
+            return {"ok": False, "error": "path does not exist", "path": str(path)}
+        if path.is_file() and path.suffix.lower() == ".md":
+            uri = self.obsidian_uri(self._display_path(path))
+            return {"ok": True, "mode": "obsidian", "uri": uri}
+        return {"ok": True, "mode": "finder", "path": str(path)}
+
+    def obsidian_uri(self, note_path: str) -> str:
+        vault_name = self.vault.name
+        clean = note_path[:-3] if note_path.endswith(".md") else note_path
+        return f"obsidian://open?vault={quote(vault_name)}&file={quote(clean)}"
+
     def _best_snippet(self, text: str, terms: set[str]) -> str:
         paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
         if not paragraphs:
@@ -224,6 +277,33 @@ class ObsidianMemory:
                     "path": str(child.relative_to(root)),
                 })
         return items
+
+    def _safe_folder(self, folder: str) -> Path:
+        if not folder:
+            return self.vault
+        candidate = (self.vault / folder.strip().strip("/")).resolve()
+        try:
+            candidate.relative_to(self.vault.resolve())
+            if candidate.is_dir():
+                return candidate
+        except ValueError:
+            pass
+        return self.vault
+
+    def _safe_folder_or_file(self, target: str) -> Path:
+        candidate = (self.vault / target.strip().strip("/")).resolve()
+        try:
+            candidate.relative_to(self.vault.resolve())
+            return candidate
+        except ValueError:
+            return self.vault
+
+    def _has_hidden_part(self, path: Path) -> bool:
+        try:
+            rel = path.resolve().relative_to(self.vault.resolve())
+        except ValueError:
+            return True
+        return any(part.startswith(".") for part in rel.parts)
 
     def _can_list(self, path: Path) -> bool:
         return self._list_error(path) is None
