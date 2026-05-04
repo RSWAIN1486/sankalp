@@ -30,10 +30,10 @@ facts in an Obsidian-readable vault without hiding memory in opaque state.
 4. UI
    - Chat transcript.
    - Activity log.
-   - Memory viewer.
-   - Session list.
-   - User profile editor.
-   - Provider settings.
+   - Full-screen memory viewer.
+   - Session list on the chat screen.
+   - Full-screen user profile editor.
+   - Full-screen provider settings with provider-specific fields.
 
 ## Memory Schema
 
@@ -65,5 +65,5 @@ The first milestone is complete when the assistant can:
 - Show tool activity in the UI.
 - Run tests for memory and tool safety.
 - Configure Gemini or Codex from the UI.
-- Configure an OpenAI-compatible local `/v1` endpoint from the UI.
+- Configure an OpenAI-compatible `/v1` endpoint from the UI.
 - Edit user-authored profile memory and delete wrong inferred traits.

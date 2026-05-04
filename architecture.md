@@ -65,13 +65,33 @@ still runs and memory/tool behavior can be tested.
 The model adapter supports five providers:
 
 - `local`: no network call, useful for testing memory and tools.
-- `local_openai`: calls any OpenAI-compatible local or LAN endpoint at
+- `local_openai`: calls any OpenAI-compatible local, LAN, or hosted endpoint at
   `<base-url>/chat/completions`, for example `http://localhost:2276/v1`.
 - `codex`: calls the local `codex exec` CLI in read-only, ephemeral mode. This uses the
   user's Codex login or plan instead of an OpenAI API key.
 - `gemini`: calls the Gemini REST `generateContent` API with a saved Gemini API key or
   `GEMINI_API_KEY`.
 - `openai`: calls the OpenAI Responses API with a saved OpenAI API key or `OPENAI_API_KEY`.
+
+Settings intentionally show only the selected provider's fields. OpenAI-compatible
+endpoints include presets for local runtimes and common API-key providers, but all route
+through the same simple Chat Completions adapter.
+
+Hermes provider setup research used:
+
+- The Hermes AI Providers page, which lists provider setup through `hermes model`, API-key
+  env vars, OAuth providers, and custom/self-hosted `/v1/chat/completions` endpoints.
+- The Hermes CLI reference, which separates `hermes model` as the full provider setup
+  wizard from in-chat `/model`, which only switches configured providers.
+
+Sankalp does not try to replicate every Hermes provider natively yet. The UI presents a
+provider setup guide for Hermes-style providers, while native Sankalp execution currently
+supports local fallback, Codex CLI, Gemini API, OpenAI API, and OpenAI-compatible endpoints.
+The guide covers the Hermes provider families documented online: OpenRouter, Nous Portal,
+OpenAI Codex, GitHub Copilot, Anthropic, Gemini, Gemini OAuth, Qwen OAuth, Hugging Face,
+Z.AI/GLM, Kimi, MiniMax, DeepSeek, NVIDIA, xAI, Ollama Cloud, Bedrock, AI Gateway,
+OpenCode, Kilo Code, Xiaomi, Arcee, Alibaba, GMI Cloud, Tencent TokenHub, LM Studio, and
+custom/self-hosted endpoints.
 
 Decision: command routing is explicit string parsing for now. A tool-call planner or
 schema-driven router would be premature before we know the real command surface.
@@ -172,12 +192,12 @@ Files:
 - `sankalp/static/style.css`
 - `sankalp/static/app.js`
 
-The UI has three regions:
+The UI uses one left icon rail and separate full main screens:
 
-- Left icon rail for Chat, User Profile, Memory, and Settings
-- Session list / profile editor / memory viewer / settings panel
-- Chat transcript and composer
-- Activity and provider status panel
+- Chat: session list, transcript, composer, activity, and provider status.
+- User Profile: profile editor plus deletable inferred traits.
+- Memory: full-page recent-note viewer.
+- Settings: provider selection, provider-specific fields, and setup guide.
 
 The frontend uses plain browser APIs and no build step.
 
@@ -206,7 +226,7 @@ Runtime dependencies:
 Optional external dependency:
 
 - OpenAI Responses API when `OPENAI_API_KEY` is set
-- OpenAI-compatible local endpoint when provider is set to `local_openai`
+- OpenAI-compatible endpoint when provider is set to `local_openai`
 - Gemini API when a Gemini key is configured
 - Local Codex CLI when provider is set to `codex`
 

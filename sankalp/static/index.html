@@ -22,99 +22,166 @@
       </button>
     </nav>
 
-    <aside class="sidebar">
-      <section id="panelChat" class="side-panel active">
-        <div class="brand">
-          <div class="mark">S</div>
-          <div>
-            <h1>Sankalp</h1>
-            <p>Local memory assistant</p>
+    <main class="workspace">
+      <section id="screenChat" class="screen active">
+        <aside class="session-panel">
+          <div class="brand">
+            <div class="mark">S</div>
+            <div>
+              <h1>Sankalp</h1>
+              <p>Local memory assistant</p>
+            </div>
           </div>
+          <button id="newSession" class="primary">New chat</button>
+          <div class="list-title">Sessions</div>
+          <div id="sessions" class="sessions"></div>
+        </aside>
+
+        <section class="chat-shell">
+          <header class="topbar">
+            <div>
+              <strong id="sessionTitle">New session</strong>
+              <span id="status">Ready</span>
+            </div>
+          </header>
+          <section id="messages" class="messages"></section>
+          <form id="composer" class="composer">
+            <textarea id="messageInput" rows="2" placeholder="Ask, or type remember: something worth keeping"></textarea>
+            <button type="submit">Send</button>
+          </form>
+        </section>
+
+        <aside class="rightbar">
+          <section>
+            <div class="panel-title">Activity</div>
+            <div id="activity" class="activity empty">No tool calls yet.</div>
+          </section>
+          <section>
+            <div class="panel-title">Provider</div>
+            <div id="providerStatus" class="provider-status">Local fallback</div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="screenProfile" class="screen content-screen">
+        <header class="screen-header">
+          <div>
+            <h2>User Profile</h2>
+            <p>Your own description is the highest-priority profile memory. Agent guesses stay removable.</p>
+          </div>
+          <button id="saveProfile" class="primary">Save profile</button>
+        </header>
+        <div class="profile-grid">
+          <section class="content-block">
+            <h3>Your Profile</h3>
+            <textarea id="selfProfile" class="panel-textarea" rows="14"></textarea>
+          </section>
+          <section class="content-block">
+            <h3>Agent-Inferred Traits</h3>
+            <div id="traits" class="traits"></div>
+          </section>
         </div>
-        <button id="newSession" class="primary">New chat</button>
-        <div class="list-title">Sessions</div>
-        <div id="sessions" class="sessions"></div>
       </section>
 
-      <section id="panelProfile" class="side-panel">
-        <h2>User Profile</h2>
-        <p>Your own description is the highest-priority profile memory.</p>
-        <textarea id="selfProfile" class="panel-textarea" rows="9"></textarea>
-        <button id="saveProfile" class="primary">Save profile</button>
-        <div class="list-title">Agent-inferred traits</div>
-        <div id="traits" class="traits"></div>
+      <section id="screenMemory" class="screen content-screen">
+        <header class="screen-header">
+          <div>
+            <h2>Memory</h2>
+            <p>Recent Obsidian notes from the vault.</p>
+          </div>
+        </header>
+        <div id="memory" class="memory memory-grid"></div>
       </section>
 
-      <section id="panelMemory" class="side-panel">
-        <h2>Memory</h2>
-        <p>Recent Obsidian notes from the vault.</p>
-        <div id="memory" class="memory"></div>
-      </section>
+      <section id="screenSettings" class="screen content-screen">
+        <header class="screen-header">
+          <div>
+            <h2>Settings</h2>
+            <p>Select a provider, then configure only the fields that provider needs.</p>
+          </div>
+          <button id="saveSettings" class="primary">Save settings</button>
+        </header>
 
-      <section id="panelSettings" class="side-panel">
-        <h2>Settings</h2>
-        <label>Provider
-          <select id="provider">
-            <option value="local">Local fallback</option>
-            <option value="local_openai">OpenAI-compatible local</option>
-            <option value="codex">Codex CLI</option>
-            <option value="gemini">Gemini API</option>
-            <option value="openai">OpenAI API</option>
-          </select>
-        </label>
-        <label>Local /v1 base URL
-          <input id="localOpenAIBaseUrl" type="text" placeholder="http://localhost:2276/v1">
-        </label>
-        <label>Local model
-          <input id="localOpenAIModel" type="text" placeholder="model name served by your local runtime">
-        </label>
-        <label>Local API key
-          <input id="localOpenAIKey" type="password" autocomplete="off" placeholder="Optional">
-        </label>
-        <label>Gemini API key
-          <input id="geminiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
-        </label>
-        <label>Gemini model
-          <input id="geminiModel" type="text">
-        </label>
-        <label>Codex model
-          <input id="codexModel" type="text" placeholder="Blank uses Codex default">
-        </label>
-        <label>OpenAI API key
-          <input id="openaiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
-        </label>
-        <label>OpenAI model
-          <input id="openaiModel" type="text">
-        </label>
-        <button id="saveSettings" class="primary">Save settings</button>
-        <div id="settingsStatus" class="settings-status"></div>
-      </section>
-    </aside>
+        <div class="settings-layout">
+          <section class="content-block">
+            <h3>Active Provider</h3>
+            <label>Provider
+              <select id="provider">
+                <option value="local">Local fallback</option>
+                <option value="local_openai">OpenAI-compatible endpoint</option>
+                <option value="codex">Codex CLI</option>
+                <option value="gemini">Gemini API</option>
+                <option value="openai">OpenAI API</option>
+              </select>
+            </label>
 
-    <main class="chat-shell">
-      <header class="topbar">
-        <div>
-          <strong id="sessionTitle">New session</strong>
-          <span id="status">Ready</span>
+            <div class="provider-fields" data-provider-fields="local">
+              <p class="field-help">No external model is called. Useful for testing memory, sessions, and tools.</p>
+            </div>
+
+            <div class="provider-fields" data-provider-fields="local_openai">
+              <label>Preset
+                <select id="compatiblePreset">
+                  <option value="custom">Custom / local</option>
+                  <option value="ollama">Ollama local</option>
+                  <option value="lmstudio">LM Studio</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="kimi">Kimi / Moonshot</option>
+                  <option value="minimax">MiniMax</option>
+                  <option value="xai">xAI</option>
+                  <option value="nvidia">NVIDIA NIM</option>
+                  <option value="huggingface">Hugging Face</option>
+                  <option value="alibaba">Alibaba DashScope</option>
+                </select>
+              </label>
+              <label>Base URL
+                <input id="localOpenAIBaseUrl" type="text" placeholder="http://localhost:2276/v1">
+              </label>
+              <label>Model
+                <input id="localOpenAIModel" type="text" placeholder="model name served by your runtime">
+              </label>
+              <label>API key
+                <input id="localOpenAIKey" type="password" autocomplete="off" placeholder="Optional">
+              </label>
+              <p class="field-help">Sankalp calls <code>&lt;base-url&gt;/chat/completions</code>.</p>
+            </div>
+
+            <div class="provider-fields" data-provider-fields="codex">
+              <label>Codex model
+                <input id="codexModel" type="text" placeholder="Blank uses Codex default">
+              </label>
+              <p class="field-help">Uses your local Codex CLI login. If needed, run <code>codex login</code> in a terminal first.</p>
+            </div>
+
+            <div class="provider-fields" data-provider-fields="gemini">
+              <label>Gemini API key
+                <input id="geminiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+              </label>
+              <label>Gemini model
+                <input id="geminiModel" type="text">
+              </label>
+            </div>
+
+            <div class="provider-fields" data-provider-fields="openai">
+              <label>OpenAI API key
+                <input id="openaiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+              </label>
+              <label>OpenAI model
+                <input id="openaiModel" type="text">
+              </label>
+            </div>
+
+            <div id="settingsStatus" class="settings-status"></div>
+          </section>
+
+          <section class="content-block">
+            <h3>Provider Setup Guide</h3>
+            <div id="providerGuide" class="provider-guide"></div>
+          </section>
         </div>
-      </header>
-      <section id="messages" class="messages"></section>
-      <form id="composer" class="composer">
-        <textarea id="messageInput" rows="2" placeholder="Ask, or type remember: something worth keeping"></textarea>
-        <button type="submit">Send</button>
-      </form>
+      </section>
     </main>
-
-    <aside class="rightbar">
-      <section>
-        <div class="panel-title">Activity</div>
-        <div id="activity" class="activity empty">No tool calls yet.</div>
-      </section>
-      <section>
-        <div class="panel-title">Provider</div>
-        <div id="providerStatus" class="provider-status">Local fallback</div>
-      </section>
-    </aside>
 
     <script src="/static/app.js"></script>
   </body>

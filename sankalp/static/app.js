@@ -3,9 +3,54 @@ let messages = [];
 let toolCalls = [];
 let settings = {};
 
+const compatiblePresets = {
+  custom: { baseUrl: "http://localhost:2276/v1", model: "" },
+  ollama: { baseUrl: "http://localhost:11434/v1", model: "qwen3:latest" },
+  lmstudio: { baseUrl: "http://localhost:1234/v1", model: "" },
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4.6" },
+  deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  kimi: { baseUrl: "https://api.moonshot.ai/v1", model: "kimi-k2.5" },
+  minimax: { baseUrl: "https://api.minimax.io/v1", model: "MiniMax-M2.7" },
+  xai: { baseUrl: "https://api.x.ai/v1", model: "grok-4-1-fast-reasoning" },
+  nvidia: { baseUrl: "https://integrate.api.nvidia.com/v1", model: "nvidia/nemotron-3-super-120b-a12b" },
+  huggingface: { baseUrl: "https://router.huggingface.co/v1", model: "Qwen/Qwen3-235B-A22B-Thinking-2507" },
+  alibaba: { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3.5-plus" },
+};
+
+const providerGuide = [
+  ["Codex CLI / OpenAI Codex", "Run `codex login` once. Sankalp then uses `codex exec` in read-only ephemeral mode. Hermes sets this up as `openai-codex` through `hermes model`."],
+  ["Gemini API", "Create a Gemini API key and save it here. Hermes uses `GOOGLE_API_KEY` or `GEMINI_API_KEY` for provider `gemini`."],
+  ["OpenAI API", "Create an OpenAI platform key and choose a Responses-capable model."],
+  ["Custom / local / OpenAI-compatible", "Use any server with `/v1/chat/completions`: Ollama, LM Studio, vLLM, llama.cpp, OpenVINO, routers, or custom proxies."],
+  ["OpenRouter", "Use `OPENROUTER_API_KEY` with base URL `https://openrouter.ai/api/v1` to access many model families through one key."],
+  ["Anthropic / Claude", "Hermes supports `ANTHROPIC_API_KEY` and Claude OAuth through `hermes model`. In Sankalp today, use Claude through OpenRouter or another compatible router until native Anthropic is added."],
+  ["GitHub Copilot", "Hermes supports `copilot` OAuth/device-code flow and `copilot-acp` through `hermes model`. Sankalp does not yet call Copilot directly."],
+  ["Nous Portal", "Hermes supports OAuth subscription setup via `hermes model`. Sankalp does not yet integrate the Nous portal."],
+  ["Google Gemini OAuth", "Hermes provider `google-gemini-cli` signs in through browser PKCE via `hermes model`. Sankalp currently supports Gemini API keys."],
+  ["Qwen OAuth", "Hermes provider `qwen-oauth` signs in through the Qwen portal via `hermes model`."],
+  ["MiniMax OAuth", "Hermes supports MiniMax browser OAuth via `hermes model`; API-key MiniMax can use the compatible endpoint path."],
+  ["DeepSeek", "Use `DEEPSEEK_API_KEY` with the DeepSeek compatible endpoint and a DeepSeek model ID."],
+  ["Kimi / Moonshot", "Use `KIMI_API_KEY` or `KIMI_CN_API_KEY`; global and China endpoints are separate."],
+  ["MiniMax API", "Use `MINIMAX_API_KEY` or `MINIMAX_CN_API_KEY` with the matching endpoint."],
+  ["Z.AI / GLM", "Hermes uses `GLM_API_KEY` for provider `zai`; compatible endpoints can be routed through Sankalp's endpoint provider."],
+  ["Alibaba DashScope", "Use `DASHSCOPE_API_KEY`; Alibaba Coding Plan uses a separate compatible endpoint but the same key family."],
+  ["Hugging Face", "Use `HF_TOKEN` with `https://router.huggingface.co/v1`."],
+  ["xAI", "Use `XAI_API_KEY` with `https://api.x.ai/v1`."],
+  ["NVIDIA NIM", "Use `NVIDIA_API_KEY` for hosted NIM or override to a local NIM `/v1` endpoint."],
+  ["Ollama Cloud", "Use `OLLAMA_API_KEY`; local Ollama usually needs no key at `http://localhost:11434/v1`."],
+  ["AWS Bedrock", "Hermes uses AWS credentials and Bedrock Converse. Sankalp does not yet have a native Bedrock adapter."],
+  ["AI Gateway", "Hermes uses `AI_GATEWAY_API_KEY` for provider `ai-gateway`; use a compatible endpoint if the gateway exposes `/v1`."],
+  ["OpenCode Zen / Go", "Hermes uses `OPENCODE_ZEN_API_KEY` or `OPENCODE_GO_API_KEY`."],
+  ["Kilo Code", "Hermes uses `KILOCODE_API_KEY`."],
+  ["Xiaomi MiMo", "Hermes uses `XIAOMI_API_KEY`."],
+  ["Arcee AI", "Hermes uses `ARCEEAI_API_KEY`."],
+  ["GMI Cloud", "Hermes uses `GMI_API_KEY`."],
+  ["Tencent TokenHub", "Hermes uses `TOKENHUB_API_KEY`."],
+];
+
 const els = {
   railButtons: document.querySelectorAll(".rail-button"),
-  sidePanels: document.querySelectorAll(".side-panel"),
+  screens: document.querySelectorAll(".screen"),
   sessions: document.querySelector("#sessions"),
   messages: document.querySelector("#messages"),
   activity: document.querySelector("#activity"),
@@ -14,6 +59,9 @@ const els = {
   selfProfile: document.querySelector("#selfProfile"),
   saveProfile: document.querySelector("#saveProfile"),
   provider: document.querySelector("#provider"),
+  providerFields: document.querySelectorAll(".provider-fields"),
+  compatiblePreset: document.querySelector("#compatiblePreset"),
+  providerGuide: document.querySelector("#providerGuide"),
   localOpenAIBaseUrl: document.querySelector("#localOpenAIBaseUrl"),
   localOpenAIModel: document.querySelector("#localOpenAIModel"),
   localOpenAIKey: document.querySelector("#localOpenAIKey"),
@@ -118,12 +166,25 @@ function renderSettings(nextSettings) {
   els.openaiKey.placeholder = settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key";
   const label = {
     local: "Local fallback",
-    local_openai: `OpenAI-compatible local (${els.localOpenAIModel.value || "no model"})`,
+    local_openai: `OpenAI-compatible (${els.localOpenAIModel.value || "no model"})`,
     codex: "Codex CLI",
     gemini: `Gemini API (${els.geminiModel.value})`,
     openai: `OpenAI API (${els.openaiModel.value})`,
   }[els.provider.value] || "Local fallback";
   els.providerStatus.textContent = label;
+  updateProviderFields();
+}
+
+function updateProviderFields() {
+  els.providerFields.forEach((block) => {
+    block.classList.toggle("active", block.dataset.providerFields === els.provider.value);
+  });
+}
+
+function renderProviderGuide() {
+  els.providerGuide.innerHTML = providerGuide.map(([name, detail]) => {
+    return `<div class="guide-card"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(detail)}</span></div>`;
+  }).join("");
 }
 
 async function loadSessions() {
@@ -211,8 +272,15 @@ els.newSession.addEventListener("click", newSession);
 els.railButtons.forEach((button) => {
   button.addEventListener("click", () => {
     els.railButtons.forEach((item) => item.classList.toggle("active", item === button));
-    els.sidePanels.forEach((panel) => panel.classList.toggle("active", panel.id === `panel${button.dataset.panel[0].toUpperCase()}${button.dataset.panel.slice(1)}`));
+    els.screens.forEach((screen) => screen.classList.toggle("active", screen.id === `screen${button.dataset.panel[0].toUpperCase()}${button.dataset.panel.slice(1)}`));
   });
+});
+els.provider.addEventListener("change", updateProviderFields);
+els.compatiblePreset.addEventListener("change", () => {
+  const preset = compatiblePresets[els.compatiblePreset.value];
+  if (!preset) return;
+  els.localOpenAIBaseUrl.value = preset.baseUrl;
+  if (preset.model) els.localOpenAIModel.value = preset.model;
 });
 els.saveProfile.addEventListener("click", async () => {
   els.saveProfile.textContent = "Saving...";
@@ -251,6 +319,8 @@ els.input.addEventListener("keydown", (event) => {
     els.form.requestSubmit();
   }
 });
+
+renderProviderGuide();
 
 Promise.all([loadSessions(), loadMemory(), loadProfile(), loadSettings()]).then(() => {
   els.input.focus();

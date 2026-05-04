@@ -130,13 +130,13 @@ class LLMAdapter:
         model = (settings.get("local_openai_model") or "").strip()
         if not base_url:
             return {
-                "text": "OpenAI-compatible local provider is selected, but no base URL is configured.",
+                "text": "OpenAI-compatible endpoint provider is selected, but no base URL is configured.",
                 "response_id": None,
                 "provider": "local-openai",
             }
         if not model:
             return {
-                "text": "OpenAI-compatible local provider is selected, but no model is configured.",
+                "text": "OpenAI-compatible endpoint provider is selected, but no model is configured.",
                 "response_id": None,
                 "provider": "local-openai",
             }

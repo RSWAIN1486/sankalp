@@ -9,7 +9,7 @@ The v1 shape is intentionally small:
 - Obsidian-compatible Markdown memory
 - A visible activity/tool log
 - Conservative local tools
-- Local settings for Local fallback, OpenAI-compatible local, Codex CLI, Gemini API,
+- Local settings for Local fallback, OpenAI-compatible endpoint, Codex CLI, Gemini API,
   or OpenAI API providers
 - A user profile panel backed by `People/you.md`
 
@@ -36,9 +36,9 @@ Then open <http://127.0.0.1:8765>.
 Provider settings can also be configured from the Settings icon in the UI. API keys are
 stored locally in `~/.sankalp/settings.json`.
 
-For local OpenAI-compatible runtimes, set provider to `OpenAI-compatible local`, enter a
-base URL such as `http://localhost:2276/v1`, and provide the model name exposed by that
-runtime. Sankalp calls `<base-url>/chat/completions`.
+For local or hosted OpenAI-compatible runtimes, set provider to `OpenAI-compatible endpoint`,
+choose a preset or enter a base URL such as `http://localhost:2276/v1`, and provide the
+model name exposed by that runtime. Sankalp calls `<base-url>/chat/completions`.
 
 ## MVP Commands
 
