@@ -28,6 +28,10 @@ Routes:
 - `GET /api/sessions` lists persisted sessions.
 - `GET /api/session?id=<id>` loads one session transcript and tool log.
 - `GET /api/memory` lists recent Markdown notes.
+- `GET /api/memory/tree` returns a folder/note tree for the configured vault workspace.
+- `GET /api/obsidian/vaults` discovers local Obsidian vault paths from Obsidian's macOS
+  registry when available.
+- `GET /api/macos/status` reports whether the local macOS app wrapper is installed.
 - `GET /api/profile` reads `People/you.md` as structured profile memory.
 - `GET /api/settings` reads provider settings with API keys masked.
 - `POST /api/session/new` creates a session.
@@ -35,6 +39,8 @@ Routes:
 - `POST /api/profile` updates the user-authored profile section.
 - `POST /api/profile/trait/delete` removes one inferred trait block.
 - `POST /api/settings` updates provider, model, and optional API key settings.
+- `POST /api/macos/install-app` creates `~/Applications/Sankalp.app`.
+- `POST /api/macos/open-full-disk-access` opens the macOS Full Disk Access settings pane.
 
 Decision: stdlib HTTP is enough for the first milestone. A framework would add more
 surface area before routing, auth, middleware, or async behavior need it.
@@ -148,6 +154,17 @@ Write behavior is append-first:
 
 Retrieval is simple keyword scoring over Markdown files.
 
+The Memory UI can switch the vault path to a real Obsidian vault and optionally scope
+browsing/retrieval to a workspace subfolder. On macOS, Obsidian's registry is read from
+`~/Library/Application Support/obsidian/obsidian.json` to suggest known vaults. If the
+process cannot read a vault because of macOS privacy permissions, the backend returns an
+access error instead of crashing.
+
+For macOS privacy, Sankalp can install a lightweight app wrapper at
+`~/Applications/Sankalp.app`. Full Disk Access must still be granted manually by the user;
+Sankalp can only open the System Settings pane. To make the grant apply to vault reads, the
+server should be launched from `Sankalp.app`, not from Terminal.
+
 Agent-inferred profile traits are intentionally low-confidence. The agent adds a trait
 only for simple first-person signals such as "I prefer..." or "I like...". Each trait is
 wrapped in comments like `<!-- sankalp:trait <id> -->`, allowing the UI to delete one
@@ -197,6 +214,7 @@ The UI uses one left icon rail and separate full main screens:
 - Chat: session list, transcript, composer, activity, and provider status.
 - User Profile: profile editor plus deletable inferred traits.
 - Memory: full-page recent-note viewer.
+- Memory: vault source, discovered vaults, workspace folder tree, and recent notes.
 - Settings: provider selection, provider-specific fields, and setup guide.
 
 The frontend uses plain browser APIs and no build step.
@@ -222,6 +240,7 @@ User message
 Runtime dependencies:
 
 - Python standard library
+- macOS `open` command for the optional Full Disk Access helper
 
 Optional external dependency:
 

@@ -87,10 +87,33 @@
         <header class="screen-header">
           <div>
             <h2>Memory</h2>
-            <p>Recent Obsidian notes from the vault.</p>
+            <p>Browse the configured Obsidian vault or a workspace folder inside it.</p>
           </div>
+          <button id="saveMemoryConfig" class="primary">Sync vault</button>
         </header>
-        <div id="memory" class="memory memory-grid"></div>
+        <div class="memory-layout">
+          <section class="content-block">
+            <h3>Vault Source</h3>
+            <label>Vault path
+              <input id="obsidianVaultPath" type="text" placeholder="/Users/you/Documents/Obsidian Vault">
+            </label>
+            <label>Workspace subfolder
+              <input id="obsidianWorkspacePath" type="text" placeholder="Projects/Bluestone or Notes">
+            </label>
+            <div id="memoryStatus" class="settings-status"></div>
+            <div id="macosAccess" class="access-actions"></div>
+            <div class="list-title">Discovered Obsidian Vaults</div>
+            <div id="vaultList" class="vault-list"></div>
+          </section>
+          <section class="content-block">
+            <h3>Folder Tree</h3>
+            <div id="memoryTree" class="memory-tree"></div>
+          </section>
+        </div>
+        <section class="content-block">
+          <h3>Recent Notes</h3>
+          <div id="memory" class="memory memory-grid"></div>
+        </section>
       </section>
 
       <section id="screenSettings" class="screen content-screen">

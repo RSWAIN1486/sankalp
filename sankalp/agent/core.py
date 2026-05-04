@@ -140,4 +140,5 @@ class Agent:
             "messages": session.messages,
             "tool_calls": session.tool_calls,
             "memory": self.memory.list_recent(limit=12),
+            "memory_status": self.memory.status(),
         }

@@ -4,13 +4,15 @@ import json
 import mimetypes
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
+from sankalp.macos import install_macos_app, macos_status, open_full_disk_access
 from sankalp.memory import ObsidianMemory
 from sankalp.sessions import SessionStore
-from sankalp.settings import load_settings, save_settings
+from sankalp.settings import discover_obsidian_vaults, load_settings, save_settings
 from sankalp.tools import ToolRegistry
 
 
@@ -19,13 +21,25 @@ STATIC_DIR = ROOT / "sankalp" / "static"
 
 def build_agent() -> Agent:
     ensure_dirs()
-    memory = ObsidianMemory(VAULT_DIR)
+    settings = load_settings(include_secrets=True)
+    vault = Path(str(settings.get("obsidian_vault_path") or VAULT_DIR)).expanduser()
+    workspace = str(settings.get("obsidian_workspace_path") or "")
+    memory = ObsidianMemory(vault, workspace=workspace)
     sessions = SessionStore(SESSION_DIR)
     tools = ToolRegistry(memory)
     return Agent(sessions, memory, tools)
 
 
 AGENT = build_agent()
+
+
+def reload_memory_from_settings() -> None:
+    settings = load_settings(include_secrets=True)
+    vault = Path(str(settings.get("obsidian_vault_path") or VAULT_DIR)).expanduser()
+    workspace = str(settings.get("obsidian_workspace_path") or "")
+    memory = ObsidianMemory(vault, workspace=workspace)
+    AGENT.memory = memory
+    AGENT.tools = ToolRegistry(memory)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -54,7 +68,13 @@ class Handler(BaseHTTPRequestHandler):
                     "tool_calls": session.tool_calls,
                 })
             if parsed.path == "/api/memory":
-                return self._json({"memory": AGENT.memory.list_recent(limit=50)})
+                return self._json({"memory": AGENT.memory.list_recent(limit=50), "status": AGENT.memory.status()})
+            if parsed.path == "/api/memory/tree":
+                return self._json({"tree": AGENT.memory.tree(), "status": AGENT.memory.status()})
+            if parsed.path == "/api/obsidian/vaults":
+                return self._json({"vaults": discover_obsidian_vaults()})
+            if parsed.path == "/api/macos/status":
+                return self._json({"macos": macos_status()})
             if parsed.path == "/api/profile":
                 return self._json({"profile": AGENT.memory.read_profile()})
             if parsed.path == "/api/settings":
@@ -76,7 +96,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"session": session.compact(), "messages": [], "tool_calls": []})
             if parsed.path == "/api/settings":
                 body = self._body()
-                return self._json({"settings": save_settings(body)})
+                settings = save_settings(body)
+                if "obsidian_vault_path" in body or "obsidian_workspace_path" in body:
+                    reload_memory_from_settings()
+                return self._json({"settings": settings, "memory_status": AGENT.memory.status()})
             if parsed.path == "/api/profile":
                 body = self._body()
                 AGENT.memory.save_self_profile(str(body.get("self_profile") or ""))
@@ -85,6 +108,10 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._body()
                 deleted = AGENT.memory.delete_trait(str(body.get("trait_id") or ""))
                 return self._json({"deleted": deleted, "profile": AGENT.memory.read_profile()})
+            if parsed.path == "/api/macos/install-app":
+                return self._json({"macos": install_macos_app()})
+            if parsed.path == "/api/macos/open-full-disk-access":
+                return self._json({"macos": open_full_disk_access()})
             return self._json({"error": "not found"}, status=404)
         except Exception:
             traceback.print_exc()

@@ -17,29 +17,43 @@ class MemoryHit:
 
 
 class ObsidianMemory:
-    def __init__(self, vault: Path):
+    def __init__(self, vault: Path, workspace: str = ""):
         self.vault = vault
+        self.workspace = workspace.strip().strip("/")
+        self.access_error: str | None = None
         self.ensure_schema()
 
     def ensure_schema(self) -> None:
-        self.vault.mkdir(parents=True, exist_ok=True)
-        for name in ["People", "Projects", "Sessions", "Skills", "Inbox", "Decisions"]:
-            (self.vault / name).mkdir(parents=True, exist_ok=True)
-        you = self.vault / "People" / "you.md"
-        if not you.exists():
-            you.write_text(self._default_profile(), encoding="utf-8")
-        else:
-            text = you.read_text(encoding="utf-8")
-            placeholder = "# You\n\nDurable facts about the user go here after promotion.\n"
-            if text.strip() == placeholder.strip():
+        try:
+            self.vault.mkdir(parents=True, exist_ok=True)
+            for name in ["People", "Projects", "Sessions", "Skills", "Inbox", "Decisions"]:
+                (self.vault / name).mkdir(parents=True, exist_ok=True)
+            you = self.vault / "People" / "you.md"
+            if not you.exists():
                 you.write_text(self._default_profile(), encoding="utf-8")
+            else:
+                text = you.read_text(encoding="utf-8")
+                placeholder = "# You\n\nDurable facts about the user go here after promotion.\n"
+                if text.strip() == placeholder.strip():
+                    you.write_text(self._default_profile(), encoding="utf-8")
+        except Exception as exc:
+            self.access_error = str(exc)
 
     def profile_path(self) -> Path:
         return self.vault / "People" / "you.md"
 
     def read_profile(self) -> dict[str, Any]:
         path = self.profile_path()
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            return {
+                "path": str(path),
+                "self_profile": "",
+                "traits": [],
+                "raw": "",
+                "error": str(exc),
+            }
         return {
             "path": str(path.relative_to(self.vault)),
             "self_profile": self._section(text, "User-authored profile"),
@@ -108,12 +122,16 @@ class ObsidianMemory:
         return path
 
     def list_recent(self, limit: int = 20) -> list[dict[str, str]]:
-        notes = [p for p in self.vault.rglob("*.md") if p.is_file()]
+        root = self.content_root()
+        try:
+            notes = [p for p in root.rglob("*.md") if p.is_file()]
+        except Exception as exc:
+            return [{"path": str(root), "title": "Memory access error", "preview": str(exc)}]
         notes.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         result = []
         for path in notes[:limit]:
             result.append({
-                "path": str(path.relative_to(self.vault)),
+                "path": self._display_path(path),
                 "title": path.stem,
                 "preview": path.read_text(encoding="utf-8", errors="ignore")[:500],
             })
@@ -124,7 +142,11 @@ class ObsidianMemory:
         if not terms:
             return []
         hits: list[MemoryHit] = []
-        for path in self.vault.rglob("*.md"):
+        try:
+            paths = list(self.content_root().rglob("*.md"))
+        except Exception:
+            return []
+        for path in paths:
             if not path.is_file():
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
@@ -133,9 +155,36 @@ class ObsidianMemory:
             if score <= 0:
                 continue
             snippet = self._best_snippet(text, terms)
-            hits.append(MemoryHit(str(path.relative_to(self.vault)), path.stem, snippet, score))
+            hits.append(MemoryHit(self._display_path(path), path.stem, snippet, score))
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[:limit]
+
+    def content_root(self) -> Path:
+        if not self.workspace:
+            return self.vault
+        candidate = (self.vault / self.workspace).resolve()
+        try:
+            candidate.relative_to(self.vault.resolve())
+        except ValueError:
+            return self.vault
+        return candidate
+
+    def status(self) -> dict[str, Any]:
+        root = self.content_root()
+        return {
+            "vault": str(self.vault),
+            "workspace": self.workspace,
+            "root": str(root),
+            "accessible": self.access_error is None and self._can_list(root),
+            "error": self.access_error or self._list_error(root),
+        }
+
+    def tree(self, max_depth: int = 4) -> dict[str, Any]:
+        root = self.content_root()
+        error = self._list_error(root)
+        if error:
+            return {"root": str(root), "items": [], "error": error}
+        return {"root": str(root), "items": self._tree_items(root, root, 0, max_depth), "error": None}
 
     def _best_snippet(self, text: str, terms: set[str]) -> str:
         paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
@@ -143,6 +192,50 @@ class ObsidianMemory:
             return ""
         best = max(paragraphs, key=lambda part: sum(part.lower().count(term) for term in terms))
         return best[:700]
+
+    def _display_path(self, path: Path) -> str:
+        try:
+            return str(path.resolve().relative_to(self.vault.resolve()))
+        except ValueError:
+            return str(path)
+
+    def _tree_items(self, root: Path, path: Path, depth: int, max_depth: int) -> list[dict[str, Any]]:
+        if depth >= max_depth:
+            return []
+        items = []
+        try:
+            children = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except Exception:
+            return []
+        for child in children:
+            if child.name.startswith("."):
+                continue
+            if child.is_dir():
+                items.append({
+                    "type": "directory",
+                    "name": child.name,
+                    "path": str(child.relative_to(root)),
+                    "children": self._tree_items(root, child, depth + 1, max_depth),
+                })
+            elif child.suffix.lower() == ".md":
+                items.append({
+                    "type": "file",
+                    "name": child.name,
+                    "path": str(child.relative_to(root)),
+                })
+        return items
+
+    def _can_list(self, path: Path) -> bool:
+        return self._list_error(path) is None
+
+    def _list_error(self, path: Path) -> str | None:
+        try:
+            next(path.iterdir(), None)
+            return None
+        except StopIteration:
+            return None
+        except Exception as exc:
+            return str(exc)
 
     def _default_profile(self) -> str:
         return (

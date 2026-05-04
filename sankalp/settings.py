@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sankalp.config import STATE_DIR
+from sankalp.config import STATE_DIR, VAULT_DIR
 
 
 SETTINGS_PATH = STATE_DIR / "settings.json"
@@ -16,6 +16,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "codex_model": "",
     "local_openai_base_url": "http://localhost:2276/v1",
     "local_openai_model": "",
+    "obsidian_vault_path": str(VAULT_DIR),
+    "obsidian_workspace_path": "",
 }
 
 
@@ -39,7 +41,16 @@ def load_settings(include_secrets: bool = False) -> dict[str, Any]:
 def save_settings(update: dict[str, Any]) -> dict[str, Any]:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     current = load_settings(include_secrets=True)
-    for key in ["provider", "openai_model", "gemini_model", "codex_model", "local_openai_base_url", "local_openai_model"]:
+    for key in [
+        "provider",
+        "openai_model",
+        "gemini_model",
+        "codex_model",
+        "local_openai_base_url",
+        "local_openai_model",
+        "obsidian_vault_path",
+        "obsidian_workspace_path",
+    ]:
         if key in update:
             current[key] = str(update.get(key) or "").strip()
     for key in ["openai_api_key", "gemini_api_key", "local_openai_api_key"]:
@@ -53,3 +64,35 @@ def save_settings(update: dict[str, Any]) -> dict[str, Any]:
         current.pop("local_openai_api_key", None)
     SETTINGS_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
     return load_settings()
+
+
+def discover_obsidian_vaults() -> list[dict[str, Any]]:
+    registry = Path("~/Library/Application Support/obsidian/obsidian.json").expanduser()
+    if not registry.exists():
+        return []
+    try:
+        data = json.loads(registry.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    vaults = []
+    for vault_id, value in (data.get("vaults") or {}).items():
+        path = Path(str(value.get("path") or "")).expanduser()
+        if not path:
+            continue
+        vaults.append({
+            "id": vault_id,
+            "path": str(path),
+            "open": bool(value.get("open")),
+            "accessible": _can_list(path),
+        })
+    return sorted(vaults, key=lambda item: (not item["open"], item["path"]))
+
+
+def _can_list(path: Path) -> bool:
+    try:
+        next(path.iterdir(), None)
+        return True
+    except StopIteration:
+        return True
+    except Exception:
+        return False

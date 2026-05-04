@@ -55,6 +55,13 @@ const els = {
   messages: document.querySelector("#messages"),
   activity: document.querySelector("#activity"),
   memory: document.querySelector("#memory"),
+  memoryTree: document.querySelector("#memoryTree"),
+  memoryStatus: document.querySelector("#memoryStatus"),
+  macosAccess: document.querySelector("#macosAccess"),
+  vaultList: document.querySelector("#vaultList"),
+  obsidianVaultPath: document.querySelector("#obsidianVaultPath"),
+  obsidianWorkspacePath: document.querySelector("#obsidianWorkspacePath"),
+  saveMemoryConfig: document.querySelector("#saveMemoryConfig"),
   traits: document.querySelector("#traits"),
   selfProfile: document.querySelector("#selfProfile"),
   saveProfile: document.querySelector("#saveProfile"),
@@ -130,6 +137,72 @@ function renderMemory(items) {
   }).join("") || `<div class="empty">No memory notes yet.</div>`;
 }
 
+function renderMemoryStatus(status) {
+  if (!status) return;
+  const workspace = status.workspace ? `Workspace: ${status.workspace}` : "Workspace: whole vault";
+  const state = status.accessible ? "Accessible" : `Access issue: ${status.error || "unknown"}`;
+  els.memoryStatus.textContent = `${state}. Vault: ${status.vault}. ${workspace}.`;
+}
+
+function renderMacOSAccess(info) {
+  if (!info || !info.is_macos) {
+    els.macosAccess.innerHTML = "";
+    return;
+  }
+  els.macosAccess.innerHTML = `
+    <button id="installSankalpApp">${info.installed ? "Reinstall Sankalp.app" : "Install Sankalp.app"}</button>
+    <button id="openFullDiskAccess">Open Full Disk Access</button>
+  `;
+  document.querySelector("#installSankalpApp").addEventListener("click", async () => {
+    const button = document.querySelector("#installSankalpApp");
+    button.textContent = "Installing...";
+    const data = await api("/api/macos/install-app", { method: "POST", body: "{}" });
+    button.textContent = data.macos?.ok ? "Installed in ~/Applications" : "Install failed";
+    await loadMacOSStatus();
+  });
+  document.querySelector("#openFullDiskAccess").addEventListener("click", async () => {
+    await api("/api/macos/open-full-disk-access", { method: "POST", body: "{}" });
+  });
+}
+
+function renderMemoryTree(tree) {
+  if (!tree || tree.error) {
+    els.memoryTree.innerHTML = `<div class="empty">${escapeHtml(tree?.error || "No tree available.")}</div>`;
+    return;
+  }
+  const rows = [];
+  function walk(items, depth) {
+    (items || []).forEach((item) => {
+      rows.push(`<div class="tree-row" style="--depth:${depth}">
+        <strong>${item.type === "directory" ? "Folder" : "Note"}: ${escapeHtml(item.name)}</strong>
+        <span>${escapeHtml(item.path)}</span>
+      </div>`);
+      if (item.children) walk(item.children, depth + 1);
+    });
+  }
+  walk(tree.items, 0);
+  els.memoryTree.innerHTML = rows.join("") || `<div class="empty">No folders or notes found.</div>`;
+}
+
+function renderVaults(vaults) {
+  els.vaultList.innerHTML = (vaults || []).map((vault) => {
+    const status = vault.accessible ? "Accessible" : "Blocked by macOS permissions";
+    return `<div class="vault-option">
+      <div>
+        <strong>${escapeHtml(vault.open ? "Open vault" : "Vault")}</strong>
+        <span>${escapeHtml(vault.path)}</span>
+        <span>${escapeHtml(status)}</span>
+      </div>
+      <button data-vault-path="${escapeHtml(vault.path)}">Use</button>
+    </div>`;
+  }).join("") || `<div class="empty">No Obsidian vaults discovered.</div>`;
+  els.vaultList.querySelectorAll("button[data-vault-path]").forEach((button) => {
+    button.addEventListener("click", () => {
+      els.obsidianVaultPath.value = button.dataset.vaultPath;
+    });
+  });
+}
+
 function renderProfile(profile) {
   els.selfProfile.value = profile.self_profile || "";
   els.traits.innerHTML = (profile.traits || []).map((trait) => {
@@ -161,6 +234,8 @@ function renderSettings(nextSettings) {
   els.geminiModel.value = settings.gemini_model || "gemini-2.5-flash";
   els.codexModel.value = settings.codex_model || "";
   els.openaiModel.value = settings.openai_model || "gpt-5.5";
+  els.obsidianVaultPath.value = settings.obsidian_vault_path || "";
+  els.obsidianWorkspacePath.value = settings.obsidian_workspace_path || "";
   els.geminiKey.placeholder = settings.has_gemini_api_key ? "Gemini key saved" : "Leave blank to keep existing key";
   els.localOpenAIKey.placeholder = settings.has_local_openai_api_key ? "Local key saved" : "Optional";
   els.openaiKey.placeholder = settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key";
@@ -213,6 +288,23 @@ async function loadSessions() {
 async function loadMemory() {
   const data = await api("/api/memory");
   renderMemory(data.memory);
+  renderMemoryStatus(data.status);
+}
+
+async function loadMemoryTree() {
+  const data = await api("/api/memory/tree");
+  renderMemoryTree(data.tree);
+  renderMemoryStatus(data.status);
+}
+
+async function loadVaults() {
+  const data = await api("/api/obsidian/vaults");
+  renderVaults(data.vaults);
+}
+
+async function loadMacOSStatus() {
+  const data = await api("/api/macos/status");
+  renderMacOSAccess(data.macos);
 }
 
 async function loadProfile() {
@@ -256,6 +348,7 @@ async function sendMessage(event) {
     renderMessages();
     renderTools();
     renderMemory(data.memory);
+    if (data.memory_status) renderMemoryStatus(data.memory_status);
     await loadProfile();
     await loadSessions();
   } catch (error) {
@@ -314,6 +407,20 @@ els.saveSettings.addEventListener("click", async () => {
   renderSettings(data.settings);
   els.settingsStatus.textContent = "Saved";
 });
+els.saveMemoryConfig.addEventListener("click", async () => {
+  els.saveMemoryConfig.textContent = "Syncing...";
+  const data = await api("/api/settings", {
+    method: "POST",
+    body: JSON.stringify({
+      obsidian_vault_path: els.obsidianVaultPath.value,
+      obsidian_workspace_path: els.obsidianWorkspacePath.value,
+    }),
+  });
+  renderSettings(data.settings);
+  if (data.memory_status) renderMemoryStatus(data.memory_status);
+  await Promise.all([loadMemory(), loadMemoryTree(), loadVaults()]);
+  els.saveMemoryConfig.textContent = "Sync vault";
+});
 els.input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
     els.form.requestSubmit();
@@ -322,6 +429,6 @@ els.input.addEventListener("keydown", (event) => {
 
 renderProviderGuide();
 
-Promise.all([loadSessions(), loadMemory(), loadProfile(), loadSettings()]).then(() => {
+Promise.all([loadSessions(), loadMemory(), loadMemoryTree(), loadVaults(), loadMacOSStatus(), loadProfile(), loadSettings()]).then(() => {
   els.input.focus();
 });

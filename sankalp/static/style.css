@@ -161,7 +161,8 @@ p {
 }
 
 .profile-grid,
-.settings-layout {
+.settings-layout,
+.memory-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
   gap: 18px;
@@ -446,6 +447,67 @@ label select {
   padding-right: 4px;
 }
 
+.vault-list,
+.memory-tree,
+.access-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.vault-option,
+.tree-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+  background: #fbfbf9;
+}
+
+.vault-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.vault-option strong,
+.tree-row strong {
+  display: block;
+  font-size: 13px;
+}
+
+.vault-option span,
+.tree-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.vault-option button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
+.access-actions {
+  grid-template-columns: repeat(auto-fit, minmax(190px, max-content));
+  margin: 12px 0;
+}
+
+.access-actions button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 9px 11px;
+  cursor: pointer;
+}
+
+.tree-row {
+  margin-left: calc(var(--depth) * 14px);
+}
+
 .guide-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -487,7 +549,8 @@ label select {
 
   #screenChat,
   .profile-grid,
-  .settings-layout {
+  .settings-layout,
+  .memory-layout {
     grid-template-columns: 1fr;
   }
 

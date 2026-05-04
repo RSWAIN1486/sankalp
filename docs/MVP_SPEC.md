@@ -26,6 +26,8 @@ facts in an Obsidian-readable vault without hiding memory in opaque state.
    - JSON session state is operational memory.
    - Writes are append-first. Promotion is a separate operation.
    - Retrieval is lightweight keyword scoring for v1.
+   - A configured Obsidian vault path and optional workspace subfolder decide what the
+     Memory screen browses.
 
 4. UI
    - Chat transcript.
@@ -67,3 +69,5 @@ The first milestone is complete when the assistant can:
 - Configure Gemini or Codex from the UI.
 - Configure an OpenAI-compatible `/v1` endpoint from the UI.
 - Edit user-authored profile memory and delete wrong inferred traits.
+- Point memory at a real Obsidian vault/workspace and browse its folder tree.
+- Install/open a macOS app wrapper so the user can grant Full Disk Access to Sankalp.

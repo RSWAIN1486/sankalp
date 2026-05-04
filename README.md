@@ -62,3 +62,15 @@ The profile icon opens `People/you.md` as structured profile memory:
 
 Inferred traits are stored as separate Markdown blocks so you can delete wrong traits from
 the UI without deleting the whole profile.
+
+## Obsidian Vault Sync
+
+The Memory screen can point Sankalp at a real Obsidian vault and an optional workspace
+subfolder inside that vault. On macOS, Obsidian vaults under `~/Documents` may require Full
+Disk Access for the terminal process running Sankalp. If access is blocked, the UI shows the
+permission error and keeps the app running.
+
+On macOS, use the Memory screen to install `~/Applications/Sankalp.app` and open System
+Settings > Privacy & Security > Full Disk Access. Grant access to `Sankalp.app`, then quit
+the terminal-run server and launch Sankalp from the app so macOS attributes vault reads to
+the app.
