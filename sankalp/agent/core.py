@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import asdict
 from typing import Any
 
@@ -27,13 +29,14 @@ class Agent:
             answer = routed
         else:
             hits = self.memory.retrieve(content)
-            memory_context = "\n\n".join(f"[{hit.path}]\n{hit.snippet}" for hit in hits)
+            memory_context = self._memory_context(content, hits)
             try:
                 result = self.llm.complete(session.messages, memory_context, session.previous_response_id)
                 session.previous_response_id = result.get("response_id")
                 answer = result["text"]
             except Exception as exc:
                 answer = f"I hit an LLM adapter error: {exc}"
+            self._maybe_infer_profile_trait(session, content)
 
         session.messages.append({"role": "assistant", "content": answer})
         self.memory.append_session_turn(session.session_id, "assistant", answer)
@@ -88,6 +91,47 @@ class Agent:
             return f"Command blocked or failed: {result.output}"
 
         return None
+
+    def _memory_context(self, query: str, hits: list[Any]) -> str:
+        profile = self.memory.read_profile()
+        chunks = []
+        if profile["self_profile"]:
+            chunks.append("[People/you.md: user-authored profile]\n" + profile["self_profile"])
+        if profile["traits"]:
+            trait_text = "\n".join(f"- {item['text']}" for item in profile["traits"])
+            chunks.append("[People/you.md: agent-inferred traits]\n" + trait_text)
+        chunks.extend(f"[{hit.path}]\n{hit.snippet}" for hit in hits)
+        return "\n\n".join(chunks)
+
+    def _maybe_infer_profile_trait(self, session: Session, content: str) -> None:
+        if len(self.memory.read_profile()["traits"]) >= 20:
+            return
+        patterns = [
+            (r"\bI prefer ([^.?!\n]{4,120})", "The user prefers {value}."),
+            (r"\bI like ([^.?!\n]{4,120})", "The user likes {value}."),
+            (r"\bI usually ([^.?!\n]{4,120})", "The user usually {value}."),
+            (r"\bI care about ([^.?!\n]{4,120})", "The user cares about {value}."),
+            (r"\bI want ([^.?!\n]{4,120})", "The user wants {value}."),
+            (r"\bI don't like ([^.?!\n]{4,120})", "The user dislikes {value}."),
+            (r"\bI am ([^.?!\n]{4,120})", "The user describes themself as {value}."),
+        ]
+        for pattern, template in patterns:
+            match = re.search(pattern, content, flags=re.I)
+            if not match:
+                continue
+            value = match.group(1).strip()
+            trait = template.format(value=value)
+            trait_id = self.memory.add_inferred_trait(trait, evidence=f"session:{session.session_id}")
+            if trait_id:
+                session.tool_calls.append({
+                    "name": "profile_infer",
+                    "status": "ok",
+                    "input": {"message": content[:240]},
+                    "output": {"trait_id": trait_id, "trait": trait},
+                    "started_at": time.time(),
+                    "finished_at": time.time(),
+                })
+            return
 
     def _payload(self, session: Session, answer: str) -> dict[str, Any]:
         return {

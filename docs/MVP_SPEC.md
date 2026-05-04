@@ -32,6 +32,8 @@ facts in an Obsidian-readable vault without hiding memory in opaque state.
    - Activity log.
    - Memory viewer.
    - Session list.
+   - User profile editor.
+   - Provider settings.
 
 ## Memory Schema
 
@@ -62,3 +64,6 @@ The first milestone is complete when the assistant can:
 - Retrieve memory snippets before answering.
 - Show tool activity in the UI.
 - Run tests for memory and tool safety.
+- Configure Gemini or Codex from the UI.
+- Configure an OpenAI-compatible local `/v1` endpoint from the UI.
+- Edit user-authored profile memory and delete wrong inferred traits.

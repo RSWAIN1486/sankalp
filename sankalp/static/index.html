@@ -7,17 +7,88 @@
     <link rel="stylesheet" href="/static/style.css">
   </head>
   <body>
+    <nav class="rail" aria-label="Sankalp sections">
+      <button class="rail-button active" data-panel="chat" aria-label="Chat" title="Chat">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5A3.5 3.5 0 0 1 15.5 15H11l-5 4v-4.4A3.5 3.5 0 0 1 5 12V6.5Z"/></svg>
+      </button>
+      <button class="rail-button" data-panel="profile" aria-label="User profile" title="User profile">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></svg>
+      </button>
+      <button class="rail-button" data-panel="memory" aria-label="Memory" title="Memory">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 5 8 4 8-4M4 17l8 4 8-4"/></svg>
+      </button>
+      <button class="rail-button" data-panel="settings" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v3m0 12v3M4.2 4.2l2.1 2.1m11.4 11.4 2.1 2.1M3 12h3m12 0h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      </button>
+    </nav>
+
     <aside class="sidebar">
-      <div class="brand">
-        <div class="mark">S</div>
-        <div>
-          <h1>Sankalp</h1>
-          <p>Local memory assistant</p>
+      <section id="panelChat" class="side-panel active">
+        <div class="brand">
+          <div class="mark">S</div>
+          <div>
+            <h1>Sankalp</h1>
+            <p>Local memory assistant</p>
+          </div>
         </div>
-      </div>
-      <button id="newSession" class="primary">New chat</button>
-      <div class="list-title">Sessions</div>
-      <div id="sessions" class="sessions"></div>
+        <button id="newSession" class="primary">New chat</button>
+        <div class="list-title">Sessions</div>
+        <div id="sessions" class="sessions"></div>
+      </section>
+
+      <section id="panelProfile" class="side-panel">
+        <h2>User Profile</h2>
+        <p>Your own description is the highest-priority profile memory.</p>
+        <textarea id="selfProfile" class="panel-textarea" rows="9"></textarea>
+        <button id="saveProfile" class="primary">Save profile</button>
+        <div class="list-title">Agent-inferred traits</div>
+        <div id="traits" class="traits"></div>
+      </section>
+
+      <section id="panelMemory" class="side-panel">
+        <h2>Memory</h2>
+        <p>Recent Obsidian notes from the vault.</p>
+        <div id="memory" class="memory"></div>
+      </section>
+
+      <section id="panelSettings" class="side-panel">
+        <h2>Settings</h2>
+        <label>Provider
+          <select id="provider">
+            <option value="local">Local fallback</option>
+            <option value="local_openai">OpenAI-compatible local</option>
+            <option value="codex">Codex CLI</option>
+            <option value="gemini">Gemini API</option>
+            <option value="openai">OpenAI API</option>
+          </select>
+        </label>
+        <label>Local /v1 base URL
+          <input id="localOpenAIBaseUrl" type="text" placeholder="http://localhost:2276/v1">
+        </label>
+        <label>Local model
+          <input id="localOpenAIModel" type="text" placeholder="model name served by your local runtime">
+        </label>
+        <label>Local API key
+          <input id="localOpenAIKey" type="password" autocomplete="off" placeholder="Optional">
+        </label>
+        <label>Gemini API key
+          <input id="geminiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+        </label>
+        <label>Gemini model
+          <input id="geminiModel" type="text">
+        </label>
+        <label>Codex model
+          <input id="codexModel" type="text" placeholder="Blank uses Codex default">
+        </label>
+        <label>OpenAI API key
+          <input id="openaiKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+        </label>
+        <label>OpenAI model
+          <input id="openaiModel" type="text">
+        </label>
+        <button id="saveSettings" class="primary">Save settings</button>
+        <div id="settingsStatus" class="settings-status"></div>
+      </section>
     </aside>
 
     <main class="chat-shell">
@@ -40,8 +111,8 @@
         <div id="activity" class="activity empty">No tool calls yet.</div>
       </section>
       <section>
-        <div class="panel-title">Memory</div>
-        <div id="memory" class="memory"></div>
+        <div class="panel-title">Provider</div>
+        <div id="providerStatus" class="provider-status">Local fallback</div>
       </section>
     </aside>
 

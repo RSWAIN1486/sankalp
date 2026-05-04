@@ -9,7 +9,9 @@ The v1 shape is intentionally small:
 - Obsidian-compatible Markdown memory
 - A visible activity/tool log
 - Conservative local tools
-- Optional OpenAI Responses API support via `OPENAI_API_KEY`
+- Local settings for Local fallback, OpenAI-compatible local, Codex CLI, Gemini API,
+  or OpenAI API providers
+- A user profile panel backed by `People/you.md`
 
 ## Run
 
@@ -27,8 +29,16 @@ Then open <http://127.0.0.1:8765>.
 - `SANKALP_OBSIDIAN_VAULT`: Markdown memory vault, default `~/.sankalp/obsidian-vault`
 - `SANKALP_MODEL`: OpenAI model, default `gpt-5.5`
 - `OPENAI_API_KEY`: enables model-backed responses
+- `GEMINI_API_KEY`: optional fallback for Gemini when no key is saved in UI settings
 - `SANKALP_ALLOW_TERMINAL`: set to `1` to allow `/sh ...` commands
 - `SANKALP_ALLOWED_ROOTS`: path list for file tools, separated by `:`
+
+Provider settings can also be configured from the Settings icon in the UI. API keys are
+stored locally in `~/.sankalp/settings.json`.
+
+For local OpenAI-compatible runtimes, set provider to `OpenAI-compatible local`, enter a
+base URL such as `http://localhost:2276/v1`, and provide the model name exposed by that
+runtime. Sankalp calls `<base-url>/chat/completions`.
 
 ## MVP Commands
 
@@ -42,3 +52,13 @@ Inside chat:
 
 Memory follows the append-first rule. Raw captures go to `Inbox/`, session traces go to
 `Sessions/`, and curated notes can be promoted manually or by a later summarizer.
+
+## User Profile
+
+The profile icon opens `People/you.md` as structured profile memory:
+
+- `User-authored profile`: your own description of yourself and your preferences.
+- `Agent-inferred traits`: low-confidence traits inferred from conversation.
+
+Inferred traits are stored as separate Markdown blocks so you can delete wrong traits from
+the UI without deleting the whole profile.

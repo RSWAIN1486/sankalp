@@ -10,6 +10,7 @@ from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
 from sankalp.memory import ObsidianMemory
 from sankalp.sessions import SessionStore
+from sankalp.settings import load_settings, save_settings
 from sankalp.tools import ToolRegistry
 
 
@@ -54,6 +55,10 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if parsed.path == "/api/memory":
                 return self._json({"memory": AGENT.memory.list_recent(limit=50)})
+            if parsed.path == "/api/profile":
+                return self._json({"profile": AGENT.memory.read_profile()})
+            if parsed.path == "/api/settings":
+                return self._json({"settings": load_settings()})
             return self._json({"error": "not found"}, status=404)
         except Exception:
             traceback.print_exc()
@@ -69,6 +74,17 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/session/new":
                 session = AGENT.sessions.create()
                 return self._json({"session": session.compact(), "messages": [], "tool_calls": []})
+            if parsed.path == "/api/settings":
+                body = self._body()
+                return self._json({"settings": save_settings(body)})
+            if parsed.path == "/api/profile":
+                body = self._body()
+                AGENT.memory.save_self_profile(str(body.get("self_profile") or ""))
+                return self._json({"profile": AGENT.memory.read_profile()})
+            if parsed.path == "/api/profile/trait/delete":
+                body = self._body()
+                deleted = AGENT.memory.delete_trait(str(body.get("trait_id") or ""))
+                return self._json({"deleted": deleted, "profile": AGENT.memory.read_profile()})
             return self._json({"error": "not found"}, status=404)
         except Exception:
             traceback.print_exc()
