@@ -71,5 +71,6 @@ The first milestone is complete when the assistant can:
 - Edit user-authored profile memory and delete wrong inferred traits.
 - Point memory at a real Obsidian vault/workspace and browse its folder tree.
 - Select a workspace from discovered vault folders and open notes in Obsidian.
+- Preview all recursive notes under a selected workspace subfolder.
 - Install/open a macOS app wrapper so the user can grant Full Disk Access to Sankalp.
 - Relaunch the app-backed server with the latest repo code from Settings.

@@ -92,8 +92,13 @@
           <button id="saveMemoryConfig" class="primary">Sync vault</button>
         </header>
         <div class="memory-layout">
-          <section class="content-block">
-            <h3>Vault Source</h3>
+          <section class="content-block vault-source-card">
+            <div class="card-heading">
+              <h3>Vault Source</h3>
+              <button id="openFullDiskAccess" class="icon-button" title="Open Full Disk Access" aria-label="Open Full Disk Access">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.9 8.4 7 10 4.1-1.6 7-5.4 7-10V6l-7-3Z"/><path d="M9 12l2 2 4-5"/></svg>
+              </button>
+            </div>
             <label>Vault path
               <input id="obsidianVaultPath" type="text" placeholder="/Users/you/Documents/Obsidian Vault">
             </label>
@@ -101,20 +106,36 @@
               <select id="obsidianWorkspacePath"></select>
             </label>
             <div id="memoryStatus" class="settings-status"></div>
-            <div id="macosAccess" class="access-actions"></div>
             <div class="list-title">Discovered Obsidian Vaults</div>
             <div id="vaultList" class="vault-list"></div>
           </section>
-          <section class="content-block">
-            <h3 id="folderTitle">Folder</h3>
-            <div id="folderChildren" class="memory-tree"></div>
-          </section>
         </div>
-        <section class="content-block">
-          <h3>Recent Notes</h3>
-          <div id="memory" class="memory memory-grid"></div>
+        <section class="content-block workspace-card">
+          <div class="workspace-card-header">
+            <div>
+              <h3 id="folderTitle">Workspace</h3>
+              <p id="workspaceSummary"></p>
+            </div>
+            <button id="viewAllNotes" class="icon-button" title="View all notes" aria-label="View all notes">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6V3Z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>
+            </button>
+          </div>
+          <div id="folderChildren" class="folder-card-grid"></div>
         </section>
       </section>
+
+      <div id="notesModal" class="modal" aria-hidden="true">
+        <div class="modal-panel">
+          <header class="modal-header">
+            <div>
+              <h2 id="notesModalTitle">Notes</h2>
+              <p id="notesModalSummary"></p>
+            </div>
+            <button id="closeNotesModal" class="secondary">Close</button>
+          </header>
+          <div id="notesPreviewGrid" class="notes-preview-grid"></div>
+        </div>
+      </div>
 
       <section id="screenSettings" class="screen content-screen">
         <header class="screen-header">

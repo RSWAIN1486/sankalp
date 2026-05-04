@@ -58,8 +58,14 @@ const els = {
   memoryTree: document.querySelector("#memoryTree"),
   folderChildren: document.querySelector("#folderChildren"),
   folderTitle: document.querySelector("#folderTitle"),
+  workspaceSummary: document.querySelector("#workspaceSummary"),
+  viewAllNotes: document.querySelector("#viewAllNotes"),
+  notesModal: document.querySelector("#notesModal"),
+  notesModalTitle: document.querySelector("#notesModalTitle"),
+  notesModalSummary: document.querySelector("#notesModalSummary"),
+  notesPreviewGrid: document.querySelector("#notesPreviewGrid"),
+  closeNotesModal: document.querySelector("#closeNotesModal"),
   memoryStatus: document.querySelector("#memoryStatus"),
-  macosAccess: document.querySelector("#macosAccess"),
   vaultList: document.querySelector("#vaultList"),
   obsidianVaultPath: document.querySelector("#obsidianVaultPath"),
   obsidianWorkspacePath: document.querySelector("#obsidianWorkspacePath"),
@@ -149,24 +155,7 @@ function renderMemoryStatus(status) {
 }
 
 function renderMacOSAccess(info) {
-  if (!info || !info.is_macos) {
-    els.macosAccess.innerHTML = "";
-    return;
-  }
-  els.macosAccess.innerHTML = `
-    <button id="installSankalpApp">${info.installed ? "Reinstall Sankalp.app" : "Install Sankalp.app"}</button>
-    <button id="openFullDiskAccess">Open Full Disk Access</button>
-  `;
-  document.querySelector("#installSankalpApp").addEventListener("click", async () => {
-    const button = document.querySelector("#installSankalpApp");
-    button.textContent = "Installing...";
-    const data = await api("/api/macos/install-app", { method: "POST", body: "{}" });
-    button.textContent = data.macos?.ok ? "Installed in ~/Applications" : "Install failed";
-    await loadMacOSStatus();
-  });
-  document.querySelector("#openFullDiskAccess").addEventListener("click", async () => {
-    await api("/api/macos/open-full-disk-access", { method: "POST", body: "{}" });
-  });
+  document.querySelector("#openFullDiskAccess").style.display = info && info.is_macos ? "inline-grid" : "none";
 }
 
 function renderMemoryTree(tree) {
@@ -198,28 +187,63 @@ function renderFolderOptions(folders, selected) {
 
 function renderFolderChildren(children) {
   if (!children || children.error) {
-    els.folderTitle.textContent = "Folder";
+    els.folderTitle.textContent = "Workspace";
+    els.workspaceSummary.textContent = "";
     els.folderChildren.innerHTML = `<div class="empty">${escapeHtml(children?.error || "No folder loaded.")}</div>`;
     return;
   }
-  els.folderTitle.textContent = children.folder ? `Folder: ${children.folder}` : "Folder: whole vault";
+  const selected = children.folder || "";
+  els.folderTitle.textContent = selected ? `Workspace: ${selected}` : "Workspace: whole vault";
+  els.workspaceSummary.textContent = `${children.items.length} immediate item${children.items.length === 1 ? "" : "s"}`;
   els.folderChildren.innerHTML = (children.items || []).map((item) => {
-    const kind = item.type === "directory" ? "Folder" : "Note";
-    const action = item.type === "directory" ? "Open folder" : "Open in Obsidian";
-    return `<div class="tree-row selectable" style="--depth:0" data-kind="${escapeHtml(item.type)}" data-path="${escapeHtml(item.path)}">
-      <strong>${kind}: ${escapeHtml(item.name)}</strong>
-      <span>${escapeHtml(item.path)}</span>
-      <button data-open-path="${escapeHtml(item.path)}">${action}</button>
+    if (item.type !== "directory") return "";
+    return `<div class="folder-card" data-path="${escapeHtml(item.path)}">
+      <div>
+        <strong>${escapeHtml(item.name)}</strong>
+        <span>${escapeHtml(item.path)}</span>
+      </div>
+      <div class="folder-card-actions">
+        <button class="icon-button" data-open-path="${escapeHtml(item.path)}" title="Open folder" aria-label="Open folder">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7Z"/><path d="M3 7V6a3 3 0 0 1 3-3h4l2 2h3"/></svg>
+        </button>
+        <button class="icon-button" data-view-notes-path="${escapeHtml(item.path)}" title="View all notes" aria-label="View all notes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6V3Z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg>
+        </button>
+      </div>
     </div>`;
   }).join("") || `<div class="empty">No subfolders or notes in this folder.</div>`;
-  els.folderChildren.querySelectorAll("[data-kind='directory']").forEach((row) => {
-    row.addEventListener("click", (event) => {
-      if (event.target.tagName === "BUTTON") return;
-      els.obsidianWorkspacePath.value = row.dataset.path;
-      loadFolderChildren(row.dataset.path);
+  els.folderChildren.querySelectorAll("button[data-open-path]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await api("/api/memory/open", {
+        method: "POST",
+        body: JSON.stringify({ path: button.dataset.openPath }),
+      });
     });
   });
-  els.folderChildren.querySelectorAll("button[data-open-path]").forEach((button) => {
+  els.folderChildren.querySelectorAll("button[data-view-notes-path]").forEach((button) => {
+    button.addEventListener("click", () => loadNotesPreview(button.dataset.viewNotesPath));
+  });
+}
+
+function renderNotesPreview(notes) {
+  if (!notes || notes.error) {
+    els.notesModalTitle.textContent = "Notes";
+    els.notesModalSummary.textContent = notes?.error || "";
+    els.notesPreviewGrid.innerHTML = "";
+    return;
+  }
+  const folder = notes.folder || "whole vault";
+  els.notesModalTitle.textContent = `Notes: ${folder}`;
+  els.notesModalSummary.textContent = `${notes.notes.length} note${notes.notes.length === 1 ? "" : "s"} found recursively`;
+  els.notesPreviewGrid.innerHTML = (notes.notes || []).map((note) => {
+    return `<article class="note-preview-card">
+      <strong>${escapeHtml(note.name)}</strong>
+      <span>${escapeHtml(note.path)}</span>
+      <pre>${escapeHtml(note.preview || "")}</pre>
+      <button data-open-path="${escapeHtml(note.path)}">Open in Obsidian</button>
+    </article>`;
+  }).join("") || `<div class="empty">No notes found.</div>`;
+  els.notesPreviewGrid.querySelectorAll("button[data-open-path]").forEach((button) => {
     button.addEventListener("click", async () => {
       await api("/api/memory/open", {
         method: "POST",
@@ -351,6 +375,14 @@ async function loadFolderChildren(folder) {
   const data = await api(`/api/memory/children?folder=${encodeURIComponent(folder || "")}`);
   renderFolderChildren(data.children);
   renderMemoryStatus(data.status);
+}
+
+async function loadNotesPreview(folder) {
+  const target = folder ?? els.obsidianWorkspacePath.value;
+  const data = await api(`/api/memory/notes?folder=${encodeURIComponent(target || "")}`);
+  renderNotesPreview(data.notes);
+  els.notesModal.classList.add("active");
+  els.notesModal.setAttribute("aria-hidden", "false");
 }
 
 async function loadVaults() {
@@ -487,6 +519,20 @@ els.saveMemoryConfig.addEventListener("click", async () => {
 });
 els.obsidianWorkspacePath.addEventListener("change", () => {
   loadFolderChildren(els.obsidianWorkspacePath.value);
+});
+els.viewAllNotes.addEventListener("click", () => loadNotesPreview(els.obsidianWorkspacePath.value));
+els.closeNotesModal.addEventListener("click", () => {
+  els.notesModal.classList.remove("active");
+  els.notesModal.setAttribute("aria-hidden", "true");
+});
+document.querySelector("#openFullDiskAccess").addEventListener("click", async () => {
+  await api("/api/macos/open-full-disk-access", { method: "POST", body: "{}" });
+});
+els.notesModal.addEventListener("click", (event) => {
+  if (event.target === els.notesModal) {
+    els.notesModal.classList.remove("active");
+    els.notesModal.setAttribute("aria-hidden", "true");
+  }
 });
 els.input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

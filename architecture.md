@@ -31,6 +31,7 @@ Routes:
 - `GET /api/memory/tree` returns a folder/note tree for the configured vault workspace.
 - `GET /api/memory/folders` returns all folders for the workspace dropdown.
 - `GET /api/memory/children?folder=<path>` returns immediate children of one folder.
+- `GET /api/memory/notes?folder=<path>` returns recursive Markdown note previews.
 - `GET /api/obsidian/vaults` discovers local Obsidian vault paths from Obsidian's macOS
   registry when available.
 - `GET /api/macos/status` reports whether the local macOS app wrapper is installed.
@@ -165,7 +166,9 @@ process cannot read a vault because of macOS privacy permissions, the backend re
 access error instead of crashing.
 
 The workspace subfolder selector is generated from readable vault directories. The right
-folder panel shows immediate children of the selected folder. Markdown notes are opened with
+folder panel shows immediate subfolders of the selected workspace as wide cards. A
+recursive `View all notes` modal previews notes across the selected folder and its
+subfolders. Markdown notes are opened with
 `obsidian://open?vault=<vault-name>&file=<note-path>`; folders open in Finder because
 Obsidian does not provide a stable public URI for focusing a folder in the file explorer.
 

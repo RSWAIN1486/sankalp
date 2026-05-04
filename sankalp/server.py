@@ -78,6 +78,10 @@ class Handler(BaseHTTPRequestHandler):
                 query = parse_qs(parsed.query)
                 folder = (query.get("folder") or [""])[0]
                 return self._json({"children": AGENT.memory.children(folder), "status": AGENT.memory.status()})
+            if parsed.path == "/api/memory/notes":
+                query = parse_qs(parsed.query)
+                folder = (query.get("folder") or [""])[0]
+                return self._json({"notes": AGENT.memory.notes(folder), "status": AGENT.memory.status()})
             if parsed.path == "/api/obsidian/vaults":
                 return self._json({"vaults": discover_obsidian_vaults()})
             if parsed.path == "/api/macos/status":

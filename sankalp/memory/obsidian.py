@@ -193,7 +193,11 @@ class ObsidianMemory:
         if error:
             return []
         folders = [{"path": "", "name": "Whole vault"}]
-        for path in sorted((p for p in root.rglob("*") if p.is_dir() and not self._has_hidden_part(p)), key=lambda p: str(p).lower()):
+        try:
+            children = sorted(root.iterdir(), key=lambda p: p.name.lower())
+        except Exception:
+            return folders
+        for path in (p for p in children if p.is_dir() and not self._has_hidden_part(p)):
             try:
                 rel = str(path.resolve().relative_to(root.resolve()))
             except ValueError:
@@ -224,6 +228,25 @@ class ObsidianMemory:
                     "obsidian_uri": self.obsidian_uri(self._display_path(child)),
                 })
         return {"folder": self._display_path(root), "items": items, "error": None}
+
+    def notes(self, folder: str | None = None, limit: int = 200) -> dict[str, Any]:
+        root = self._safe_folder(folder or self.workspace)
+        error = self._list_error(root)
+        if error:
+            return {"folder": self._display_path(root), "notes": [], "error": error}
+        notes = []
+        try:
+            paths = sorted(root.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        except Exception as exc:
+            return {"folder": self._display_path(root), "notes": [], "error": str(exc)}
+        for path in paths[:limit]:
+            notes.append({
+                "name": path.name,
+                "path": self._display_path(path),
+                "preview": path.read_text(encoding="utf-8", errors="ignore")[:700],
+                "obsidian_uri": self.obsidian_uri(self._display_path(path)),
+            })
+        return {"folder": self._display_path(root), "notes": notes, "error": None}
 
     def open_target(self, target: str) -> dict[str, Any]:
         path = self._safe_folder_or_file(target)

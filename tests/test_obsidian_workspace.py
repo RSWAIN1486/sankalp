@@ -23,6 +23,22 @@ class ObsidianWorkspaceTests(unittest.TestCase):
             self.assertEqual(recent[0]["path"], "Projects/Bluestone/Discussion points.md")
             self.assertNotIn("Other.md", [note["path"] for note in recent])
 
+    def test_folders_lists_only_top_level_workspace_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            (vault / "Notes" / "Nested").mkdir(parents=True)
+            (vault / "Projects" / "Bluestone").mkdir(parents=True)
+            (vault / ".obsidian" / "themes").mkdir(parents=True)
+
+            folders = ObsidianMemory(vault).folders()
+            paths = [folder["path"] for folder in folders]
+
+            self.assertIn("Notes", paths)
+            self.assertIn("Projects", paths)
+            self.assertNotIn("Notes/Nested", paths)
+            self.assertNotIn("Projects/Bluestone", paths)
+            self.assertNotIn(".obsidian", paths)
+
 
 if __name__ == "__main__":
     unittest.main()

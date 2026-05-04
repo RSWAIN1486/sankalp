@@ -71,9 +71,10 @@ Disk Access for the terminal process running Sankalp. If access is blocked, the 
 permission error and keeps the app running.
 
 Once the vault is readable, the workspace selector is populated from the vault's folder
-tree. Selecting a folder shows its immediate subfolders and notes. Markdown notes can be
-opened directly in Obsidian; folders open in Finder because Obsidian's public URI scheme is
-file-oriented.
+tree. Selecting a folder shows screen-wide cards for its immediate subfolders. `View all
+notes` opens a preview modal for notes found recursively under the selected workspace or
+subfolder. Markdown notes can be opened directly in Obsidian; folders open in Finder because
+Obsidian's public URI scheme is file-oriented.
 
 On macOS, use the Memory screen to install `~/Applications/Sankalp.app` and open System
 Settings > Privacy & Security > Full Disk Access. Grant access to `Sankalp.app`, then quit
