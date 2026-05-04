@@ -90,3 +90,7 @@ Settings loads model dropdowns for Gemini, OpenAI, and Codex. Gemini and OpenAI 
 provider model APIs when keys are configured and fall back to curated current lists. Codex
 uses `codex debug models` after `codex login`; the UI can start `codex login` and then
 refresh the Codex model dropdown.
+
+Use `Test hello` in Settings to send a tiny prompt through the currently selected provider,
+model, API key, or OpenAI-compatible endpoint. The check does not create a chat session and
+can validate unsaved form values before you commit them.

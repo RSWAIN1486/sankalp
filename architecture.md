@@ -45,6 +45,8 @@ Routes:
 - `POST /api/profile` updates the user-authored profile section.
 - `POST /api/profile/trait/delete` removes one inferred trait block.
 - `POST /api/settings` updates provider, model, and optional API key settings.
+- `POST /api/provider/test` runs a tiny hello prompt against the selected provider
+  configuration without saving a chat session.
 - `POST /api/codex/login` starts `codex login` asynchronously.
 - `POST /api/macos/install-app` creates `~/Applications/Sankalp.app`.
 - `POST /api/macos/open-full-disk-access` opens the macOS Full Disk Access settings pane.
@@ -96,6 +98,14 @@ OpenAI and Gemini model controls are dropdowns. When API keys exist, Sankalp cal
 provider model-list endpoints. Without keys or on failure, it falls back to model lists
 seeded from Hermes and official provider docs. Codex models come from `codex debug models`
 after login; the UI can start `codex login`, which opens the browser auth flow.
+
+The Settings screen also exposes a `Test hello` action. The browser posts the current form
+values to `/api/provider/test`; the backend merges non-empty API keys and selected model
+values over saved settings, sends a minimal hello prompt through the same adapter used by
+chat, and returns either the provider response or the provider error. This keeps the check
+small and avoids duplicating provider clients, while still allowing users to test a new key
+or local endpoint before saving it. The browser keeps the last test result separately per
+provider, so switching providers shows that provider's own last result or `not tested yet`.
 
 Hermes provider setup research used:
 

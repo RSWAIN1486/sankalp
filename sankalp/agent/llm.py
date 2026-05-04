@@ -12,6 +12,42 @@ from sankalp.settings import load_settings
 
 
 class LLMAdapter:
+    def test_provider(self, update: dict[str, Any]) -> dict[str, Any]:
+        settings = load_settings(include_secrets=True)
+        for key, value in update.items():
+            if key.endswith("_api_key") and not str(value or "").strip():
+                continue
+            settings[key] = str(value or "").strip()
+        provider = str(settings.get("provider") or "local")
+        messages = [{"role": "user", "content": "Reply with exactly: hello"}]
+        try:
+            if provider == "local_openai":
+                result = self._local_openai(settings, messages, "")
+            elif provider == "gemini":
+                result = self._gemini(settings, messages, "")
+            elif provider == "codex":
+                result = self._codex(settings, messages, "")
+            elif provider == "openai":
+                api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return {"ok": False, "provider": provider, "error": "OpenAI API key is not configured."}
+                result = self._openai(api_key, settings, messages, "", None)
+            else:
+                result = {
+                    "text": self._fallback(messages, ""),
+                    "response_id": None,
+                    "provider": "local-fallback",
+                }
+        except Exception as exc:
+            return {"ok": False, "provider": provider, "error": str(exc)}
+
+        text = str(result.get("text") or "").strip()
+        if result.get("provider") == "local-fallback":
+            return {"ok": provider == "local", "provider": provider, "model": self._selected_model(settings), "text": text}
+        if text.startswith("Codex provider failed:"):
+            return {"ok": False, "provider": provider, "model": self._selected_model(settings), "error": text}
+        return {"ok": bool(text), "provider": provider, "model": self._selected_model(settings), "text": text}
+
     def complete(self, messages: list[dict[str, str]], memory_context: str, previous_response_id: str | None = None) -> dict[str, Any]:
         settings = load_settings(include_secrets=True)
         provider = settings.get("provider", "local")
@@ -177,8 +213,6 @@ class LLMAdapter:
                 "exec",
                 "--sandbox",
                 "read-only",
-                "--ask-for-approval",
-                "never",
                 "--cd",
                 str(ROOT),
                 "--skip-git-repo-check",
@@ -231,6 +265,18 @@ class LLMAdapter:
             if isinstance(content, str):
                 return content.strip()
         return "The local OpenAI-compatible server responded, but I could not extract message content."
+
+    def _selected_model(self, settings: dict[str, Any]) -> str:
+        provider = str(settings.get("provider") or "local")
+        if provider == "openai":
+            return str(settings.get("openai_model") or MODEL)
+        if provider == "gemini":
+            return str(settings.get("gemini_model") or "gemini-3-flash-preview")
+        if provider == "codex":
+            return str(settings.get("codex_model") or "Codex default")
+        if provider == "local_openai":
+            return str(settings.get("local_openai_model") or "")
+        return "local fallback"
 
     def _fallback(self, messages: list[dict[str, str]], memory_context: str) -> str:
         latest = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")

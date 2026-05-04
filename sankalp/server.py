@@ -118,6 +118,8 @@ class Handler(BaseHTTPRequestHandler):
                 if "obsidian_vault_path" in body or "obsidian_workspace_path" in body:
                     reload_memory_from_settings()
                 return self._json({"settings": settings, "memory_status": AGENT.memory.status()})
+            if parsed.path == "/api/provider/test":
+                return self._json({"test": AGENT.llm.test_provider(self._body())})
             if parsed.path == "/api/profile":
                 body = self._body()
                 AGENT.memory.save_self_profile(str(body.get("self_profile") or ""))

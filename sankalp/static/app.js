@@ -2,6 +2,7 @@ let currentSessionId = null;
 let messages = [];
 let toolCalls = [];
 let settings = {};
+let providerTestResults = {};
 
 const compatiblePresets = {
   custom: { baseUrl: "http://localhost:2276/v1", model: "" },
@@ -90,6 +91,8 @@ const els = {
   openaiKey: document.querySelector("#openaiKey"),
   openaiModel: document.querySelector("#openaiModel"),
   openaiModelsStatus: document.querySelector("#openaiModelsStatus"),
+  testProvider: document.querySelector("#testProvider"),
+  providerTestStatus: document.querySelector("#providerTestStatus"),
   saveSettings: document.querySelector("#saveSettings"),
   settingsStatus: document.querySelector("#settingsStatus"),
   relaunchApp: document.querySelector("#relaunchApp"),
@@ -311,6 +314,7 @@ function renderSettings(nextSettings) {
   els.openaiKey.placeholder = settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key";
   updateProviderSummary();
   updateProviderFields();
+  renderProviderTestStatus();
   loadProviderModels("openai", settings.openai_model || "gpt-5.5");
   loadProviderModels("gemini", settings.gemini_model || "gemini-3-flash-preview");
   loadProviderModels("codex", settings.codex_model || "");
@@ -375,6 +379,36 @@ async function loadCodexStatus() {
   const data = await api("/api/codex/status");
   const status = data.codex || {};
   els.codexStatus.textContent = status.logged_in ? "Codex is logged in." : status.login_running ? "Codex login is running." : "Codex is not logged in.";
+}
+
+function providerSettingsPayload() {
+  return {
+    provider: els.provider.value,
+    local_openai_base_url: els.localOpenAIBaseUrl.value,
+    local_openai_model: els.localOpenAIModel.value,
+    local_openai_api_key: els.localOpenAIKey.value,
+    gemini_api_key: els.geminiKey.value,
+    gemini_model: els.geminiModel.value,
+    codex_model: els.codexModel.value,
+    openai_api_key: els.openaiKey.value,
+    openai_model: els.openaiModel.value,
+  };
+}
+
+function activeProviderLabel(provider = els.provider.value) {
+  const option = Array.from(els.provider.options).find((item) => item.value === provider);
+  return option ? option.textContent : provider;
+}
+
+function renderProviderTestStatus() {
+  const result = providerTestResults[els.provider.value];
+  els.providerTestStatus.classList.remove("ok", "error");
+  if (!result) {
+    els.providerTestStatus.textContent = `${activeProviderLabel()} not tested yet.`;
+    return;
+  }
+  els.providerTestStatus.classList.add(result.ok ? "ok" : "error");
+  els.providerTestStatus.textContent = result.message;
 }
 
 async function loadSessions() {
@@ -506,6 +540,7 @@ els.railButtons.forEach((button) => {
 els.provider.addEventListener("change", () => {
   updateProviderFields();
   updateProviderSummary();
+  renderProviderTestStatus();
 });
 els.geminiModel.addEventListener("change", updateProviderSummary);
 els.codexModel.addEventListener("change", updateProviderSummary);
@@ -531,23 +566,41 @@ els.saveSettings.addEventListener("click", async () => {
   els.settingsStatus.textContent = "Saving...";
   const data = await api("/api/settings", {
     method: "POST",
-    body: JSON.stringify({
-      provider: els.provider.value,
-      local_openai_base_url: els.localOpenAIBaseUrl.value,
-      local_openai_model: els.localOpenAIModel.value,
-      local_openai_api_key: els.localOpenAIKey.value,
-      gemini_api_key: els.geminiKey.value,
-      gemini_model: els.geminiModel.value,
-      codex_model: els.codexModel.value,
-      openai_api_key: els.openaiKey.value,
-      openai_model: els.openaiModel.value,
-    }),
+    body: JSON.stringify(providerSettingsPayload()),
   });
   els.geminiKey.value = "";
   els.localOpenAIKey.value = "";
   els.openaiKey.value = "";
   renderSettings(data.settings);
   els.settingsStatus.textContent = "Saved";
+});
+els.testProvider.addEventListener("click", async () => {
+  const testedProvider = els.provider.value;
+  els.providerTestStatus.classList.remove("ok", "error");
+  els.providerTestStatus.textContent = "Testing...";
+  els.testProvider.disabled = true;
+  try {
+    const data = await api("/api/provider/test", {
+      method: "POST",
+      body: JSON.stringify(providerSettingsPayload()),
+    });
+    const result = data.test || {};
+    let message = "";
+    if (result.ok) {
+      const model = result.model ? ` (${result.model})` : "";
+      message = `Working${model}: ${result.text || "response received"}`;
+    } else {
+      message = result.error || "Provider test failed.";
+    }
+    providerTestResults[testedProvider] = { ok: Boolean(result.ok), message };
+  } catch (error) {
+    providerTestResults[testedProvider] = { ok: false, message: error.message };
+  } finally {
+    els.testProvider.disabled = false;
+    if (els.provider.value === testedProvider) {
+      renderProviderTestStatus();
+    }
+  }
 });
 els.codexLogin.addEventListener("click", async () => {
   els.codexStatus.textContent = "Starting Codex login...";

@@ -473,6 +473,14 @@ label select {
   line-height: 1.4;
 }
 
+.settings-status.ok {
+  color: var(--accent);
+}
+
+.settings-status.error {
+  color: #b42318;
+}
+
 .provider-fields {
   display: none;
 }

@@ -68,6 +68,7 @@ The first milestone is complete when the assistant can:
 - Run tests for memory and tool safety.
 - Configure Gemini or Codex from the UI.
 - Choose Gemini/OpenAI/Codex models from dropdowns populated by live APIs or curated fallbacks.
+- Test the selected provider/model with a tiny backend hello prompt before or after saving.
 - Configure an OpenAI-compatible `/v1` endpoint from the UI.
 - Edit user-authored profile memory and delete wrong inferred traits.
 - Point memory at a real Obsidian vault/workspace and browse its folder tree.
