@@ -175,6 +175,12 @@ static void open_url(void) {{
   posix_spawn(&pid, "/usr/bin/open", NULL, NULL, argv, environ);
 }}
 
+static void free_port(void) {{
+  run_quiet("/bin/sh -c 'pids=$(/usr/sbin/lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null); [ -z \"$pids\" ] || /bin/kill -TERM $pids >/dev/null 2>&1'");
+  usleep(500000);
+  run_quiet("/bin/sh -c 'pids=$(/usr/sbin/lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null); [ -z \"$pids\" ] || /bin/kill -KILL $pids >/dev/null 2>&1'");
+}}
+
 int main(void) {{
   const char *repo = "{repo_root}";
   const char *home = getenv("HOME");
@@ -187,6 +193,7 @@ int main(void) {{
     open_url();
     return 0;
   }}
+  free_port();
 
   if (!home) home = "/tmp";
   snprintf(log_dir, sizeof(log_dir), "%s/.sankalp", home);
@@ -252,22 +259,37 @@ if /usr/bin/curl -fsS "$URL/api/health" >/dev/null 2>&1; then
   exit 0
 fi
 
-cd "$SANKALP_REPO_DIR" || exit 1
-/usr/bin/python3 server.py >>"$LOG_FILE" 2>&1 &
-SERVER_PID=$!
-
-cleanup() {{
-  /bin/kill "$SERVER_PID" >/dev/null 2>&1 || true
+free_port() {{
+  local pids
+  pids="$(/usr/sbin/lsof -tiTCP:"$SANKALP_PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    /bin/kill -TERM $pids >/dev/null 2>&1 || true
+    /bin/sleep 0.5
+  fi
+  pids="$(/usr/sbin/lsof -tiTCP:"$SANKALP_PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    /bin/kill -KILL $pids >/dev/null 2>&1 || true
+  fi
 }}
-trap cleanup INT TERM EXIT
+
+free_port
+
+cd "$SANKALP_REPO_DIR" || exit 1
+nohup /usr/bin/python3 server.py >>"$LOG_FILE" 2>&1 </dev/null &
+SERVER_PID=$!
 
 for _ in {{1..60}}; do
   if /usr/bin/curl -fsS "$URL/api/health" >/dev/null 2>&1; then
     /usr/bin/open "$URL"
-    break
+    exit 0
   fi
   /bin/sleep 0.25
 done
 
-wait "$SERVER_PID"
+if /bin/kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+  /usr/bin/open "$URL"
+  exit 0
+fi
+
+exit 1
 """

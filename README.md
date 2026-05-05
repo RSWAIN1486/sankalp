@@ -26,6 +26,38 @@ nvm install 24
 
 ## Install
 
+### One-command macOS App Install
+
+Sankalp can install like a local WebUI app: the installer clones or updates the repo under
+`~/.sankalp/app`, installs Node through `nvm` when needed, builds the SvelteKit WebUI,
+creates `~/Applications/Sankalp.app`, frees the configured local port, and opens the app.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_macos.sh | bash
+```
+
+The installed app serves the built WebUI and the Python backend from one loopback URL:
+
+```text
+http://127.0.0.1:8765
+```
+
+Useful installer overrides:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_macos.sh | SANKALP_PORT=8766 bash
+SANKALP_INSTALL_DIR="$HOME/Developer/sankalp" bash scripts/install_macos.sh
+SANKALP_SKIP_PORT_KILL=1 bash scripts/install_macos.sh
+```
+
+By default the installer and app launcher free `SANKALP_PORT` before starting Sankalp. Set
+`SANKALP_SKIP_PORT_KILL=1` while installing if you want to handle occupied ports yourself.
+When you run `bash scripts/install_macos.sh` from a local checkout, the installer copies that
+checkout into `~/.sankalp/app` so uncommitted local changes can be tested before publishing
+the curl installer.
+
+### Development Install
+
 Clone or enter the repo:
 
 ```sh
@@ -72,6 +104,9 @@ http://127.0.0.1:5173
 ```
 
 The WebUI proxies `/api/*` to the backend at `http://127.0.0.1:8765`.
+
+For installed app usage, run `cd web && npm run build` once and open
+`http://127.0.0.1:8765`; the Python backend serves the built WebUI directly.
 
 ## First Setup
 

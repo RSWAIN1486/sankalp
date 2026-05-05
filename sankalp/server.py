@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import traceback
 import subprocess
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
@@ -30,6 +31,7 @@ def build_agent() -> Agent:
 
 
 AGENT = build_agent()
+WEB_BUILD_DIR = ROOT / "web" / "build"
 
 
 def reload_memory_from_settings() -> None:
@@ -41,6 +43,27 @@ def reload_memory_from_settings() -> None:
     AGENT.tools = ToolRegistry(memory)
 
 
+def resolve_web_asset(request_path: str, web_root: Path = WEB_BUILD_DIR) -> Path | None:
+    if not web_root.exists():
+        return None
+
+    root = web_root.resolve()
+    clean_path = unquote(request_path.split("?", 1)[0]).lstrip("/") or "index.html"
+    candidate = (root / clean_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+
+    if candidate.is_file():
+        return candidate
+
+    index = root / "index.html"
+    if index.is_file():
+        return index
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Sankalp/0.1"
 
@@ -50,13 +73,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         try:
             parsed = urlparse(self.path)
-            if parsed.path == "/":
-                return self._json({
-                    "ok": True,
-                    "name": "Sankalp",
-                    "backend": f"http://{HOST}:{PORT}",
-                    "webui": "Start the SvelteKit WebUI from ./web and open http://127.0.0.1:5173",
-                })
+            if parsed.path != "/api" and not parsed.path.startswith("/api/"):
+                asset = resolve_web_asset(parsed.path)
+                if asset:
+                    return self._file(asset)
+                if parsed.path == "/":
+                    return self._json({
+                        "ok": True,
+                        "name": "Sankalp",
+                        "backend": f"http://{HOST}:{PORT}",
+                        "webui": "Build the SvelteKit WebUI with `cd web && npm run build`.",
+                    })
             if parsed.path == "/api/health":
                 return self._json({"ok": True})
             if parsed.path == "/api/sessions":
@@ -191,6 +218,16 @@ class Handler(BaseHTTPRequestHandler):
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("content-type", "application/json; charset=utf-8")
+        self.send_header("content-length", str(len(data)))
+        self.send_header("cache-control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _file(self, path: Path) -> None:
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(data)))
         self.send_header("cache-control", "no-store")
         self.end_headers()

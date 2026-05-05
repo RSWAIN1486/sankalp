@@ -10,7 +10,8 @@ existing `/api/*` routes.
 
 ## Components
 
-- `sankalp/server.py`: loopback HTTP server, JSON APIs, and SSE chat route.
+- `sankalp/server.py`: loopback HTTP server, JSON APIs, SSE chat route, and static
+  serving for the built `web/build` app in installed-app mode.
 - `sankalp/agent/core.py`: turn orchestration, explicit command routing, memory retrieval,
   memory-search intent routing, session updates, edit/resend branching, and background
   generated titles.
@@ -23,7 +24,8 @@ existing `/api/*` routes.
   including auditable Obsidian search.
 - `web/`: SvelteKit/TypeScript frontend that follows the llama.cpp WebUI direction:
   routes, components, stores, services, and browser storage. It currently calls the existing
-  backend APIs through the Vite dev proxy.
+  backend APIs through the Vite dev proxy during development, and is served by the Python
+  backend after `npm run build` for installed app usage.
 - `web/src/lib/storage/db.ts`: Dexie/IndexedDB storage for browser-local UI state. The first
   stored data is composer preferences and cached session summaries. IndexedDB is not the
   source of truth for long-term memory.
@@ -55,6 +57,16 @@ Current frontend layers:
 The design choice is to keep the current backend stable while replacing the UI foundation.
 This avoids a combined frontend/backend rewrite and lets the professional shell prove the
 data contracts before SQLite and typed backend routes are introduced.
+
+Installed app mode uses a single loopback origin. The WebUI is built into `web/build`, and
+`sankalp/server.py` serves that static bundle with SPA fallback while keeping `/api/*`
+reserved for JSON and SSE routes. The curl installer at `scripts/install_macos.sh` clones or
+updates the app checkout under `~/.sankalp/app`, installs/builds the WebUI, frees the
+configured backend port, creates `~/Applications/Sankalp.app`, and opens it. The app wrapper
+also frees the configured port before launching the Python backend when no healthy Sankalp
+server is already listening. When the installer is run from a local checkout instead of curl,
+it mirrors that working tree into `~/.sankalp/app` before building so local changes can be
+validated without first pushing to GitHub.
 
 The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
 collapsible left sidebar, the top bar only exposes settings, and detailed surfaces move into

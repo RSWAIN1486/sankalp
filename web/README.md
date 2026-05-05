@@ -1,7 +1,9 @@
 # Sankalp WebUI
 
-This is the SvelteKit frontend for Sankalp. It runs separately from the Python backend and
-uses the backend JSON/SSE APIs through the Vite dev proxy.
+This is the SvelteKit frontend for Sankalp. During development it runs separately from the
+Python backend and uses the backend JSON/SSE APIs through the Vite dev proxy. In installed
+app mode, `npm run build` writes `web/build`, and the Python backend serves that static
+bundle from the same loopback origin as `/api/*`.
 
 ## Development
 
@@ -24,6 +26,18 @@ npm run dev -- --port 5173
 
 The Vite dev server proxies `/api/*` to `http://127.0.0.1:8765`.
 Open `http://127.0.0.1:5173`.
+
+## Installed App Build
+
+```sh
+cd /Users/rswai/sankalp/web
+source ~/.nvm/nvm.sh
+nvm use
+npm ci
+npm run build
+```
+
+After the build, `python3 server.py` serves the WebUI at `http://127.0.0.1:8765`.
 
 ## Current Scope
 

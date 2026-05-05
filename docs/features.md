@@ -76,6 +76,10 @@ from safe read/search tools before normal chat.
 
 ## macOS App
 
+- One-command curl installer clones or updates Sankalp, builds the WebUI, installs
+  `~/Applications/Sankalp.app`, and opens it.
+- Installed app mode serves the built WebUI and backend API from one local loopback port.
+- The installer and app wrapper free the configured Sankalp port before starting when needed.
 - Installs a lightweight `~/Applications/Sankalp.app` wrapper.
 - Opens the Full Disk Access settings pane.
 - Relaunches the app-backed server with latest repo code from Settings.
