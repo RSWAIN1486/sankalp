@@ -47,6 +47,43 @@ export type ComposerOptions = {
   reasoning_effort: string;
 };
 
+export type ComposerPreference = Partial<ComposerOptions> & {
+  models_by_provider?: Record<string, string>;
+};
+
+export type ModelOption = {
+  id: string;
+  label?: string;
+};
+
+export type ProviderModels = {
+  provider: string;
+  models: ModelOption[];
+  source?: string;
+  error?: string | null;
+};
+
+export type AppUpdateManifest = {
+  version?: string;
+  channel?: string;
+  title?: string;
+  notes?: string[];
+  minimum_supported_version?: string;
+};
+
+export type AppUpdateStatus = {
+  ok?: boolean;
+  current_version?: string;
+  current_commit?: string;
+  latest_version?: string;
+  latest?: AppUpdateManifest;
+  update_available?: boolean;
+  checked_at?: number;
+  manifest_url?: string;
+  error?: string;
+  message?: string;
+};
+
 export type StreamEvent =
   | { event: "status"; data: { label?: string; detail?: string } }
   | { event: "session"; data: { session: SessionSummary; tool_calls?: ToolCall[] } }

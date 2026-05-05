@@ -302,8 +302,8 @@ button {
 .chat-workspace {
   min-width: 0;
   min-height: 100vh;
-  display: grid;
-  grid-template-rows: 54px minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-header {
@@ -366,9 +366,28 @@ button {
 
 .header-actions button,
 .icon-button {
+  position: relative;
   width: 34px;
   display: grid;
   place-items: center;
+}
+
+.header-actions button.update-icon-button {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.header-actions button.update-dot::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  background: #78d39a;
 }
 
 .header-actions button.active {
@@ -376,7 +395,68 @@ button {
   color: var(--ink);
 }
 
+.update-banner {
+  width: min(var(--chat-width), calc(100% - 40px));
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151516;
+  margin: 0 auto 8px;
+  padding: 7px;
+}
+
+.update-banner button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.update-banner button:first-child {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.update-banner button:first-child:hover,
+.update-banner button:last-child:hover {
+  background: var(--panel-soft);
+}
+
+.update-banner strong,
+.update-banner span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-banner strong {
+  font-size: 13px;
+}
+
+.update-banner span,
+.update-banner button:last-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-banner button:last-child {
+  min-height: 30px;
+  padding: 0 8px;
+}
+
 .message-list {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 34px clamp(22px, 8vw, 96px) 24px;
@@ -729,7 +809,8 @@ button {
 .trait-list,
 .vault-list,
 .memory-browser,
-.notes-preview {
+.notes-preview,
+.app-update-card {
   display: grid;
   gap: 10px;
 }
@@ -737,7 +818,8 @@ button {
 .trait-list article,
 .vault-list button,
 .memory-browser article,
-.notes-preview article {
+.notes-preview article,
+.app-update-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -750,6 +832,42 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+}
+
+.app-update-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.app-update-card strong,
+.app-update-card span {
+  display: block;
+}
+
+.app-update-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.app-update-card button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel-soft);
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.update-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .memory-browser strong,

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { Box, Plus, SendHorizontal } from "@lucide/svelte";
-  import { chatState, sendMessage, setDraft, updateComposer } from "$lib/stores/chat";
+  import { chatState, composerModelOptions, ensureProviderModels, sendMessage, setDraft, updateComposer } from "$lib/stores/chat";
 
   let sending = false;
+
+  $: void ensureProviderModels($chatState.composer.provider);
 
   async function submit() {
     if (sending || !$chatState.draft.trim()) return;
@@ -45,12 +47,18 @@
         <option value="gemini">Gemini API</option>
         <option value="openai">OpenAI API</option>
       </select>
-      <input
+      <select
         aria-label="Model"
-        placeholder="Model"
         value={$chatState.composer.model}
-        on:input={(event) => updateComposer({ model: event.currentTarget.value })}
-      />
+        disabled={$composerModelOptions.length === 0}
+        on:change={(event) => updateComposer({ model: event.currentTarget.value })}
+      >
+        {#each $composerModelOptions as model}
+          <option value={model.id}>{model.label || model.id || "No model"}</option>
+        {:else}
+          <option value="">No models loaded</option>
+        {/each}
+      </select>
       <select
         aria-label="Reasoning effort"
         value={$chatState.composer.reasoning_effort}

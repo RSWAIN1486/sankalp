@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Folder, KeyRound, RotateCw, ShieldCheck, User, X } from "@lucide/svelte";
+  import { Download, Folder, KeyRound, RotateCw, ShieldCheck, User, X } from "@lucide/svelte";
   import { api } from "$lib/services/api";
-  import { chatState, closeSettings, refreshSettings, setSettingsTab } from "$lib/stores/chat";
+  import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, startAppUpdate } from "$lib/stores/chat";
   import type { Settings } from "$lib/types";
 
   type Tab = "provider" | "memory" | "profile" | "app";
@@ -88,6 +88,7 @@
     geminiKey = "";
     openaiKey = "";
     refreshSettings(settings);
+    void Promise.all(["local_openai", "codex", "gemini", "openai"].map((item) => ensureProviderModels(item, true)));
     status = "Saved";
   }
 
@@ -170,10 +171,16 @@
     profile = data.profile || {};
   }
 
-  async function relaunchApp() {
-    appStatus = "Relaunching...";
-    await api("/api/app/relaunch", { method: "POST", body: "{}" });
-    appStatus = "Relaunch requested";
+  async function checkUpdates() {
+    appStatus = "Checking for updates...";
+    await checkAppUpdate(true);
+    appStatus = $chatState.appUpdate?.update_available ? "Update available" : $chatState.appUpdate?.error || "Sankalp is up to date";
+  }
+
+  async function updateApp() {
+    appStatus = "Starting update...";
+    await startAppUpdate();
+    appStatus = $chatState.appUpdate?.message || "Update started";
   }
 
   async function openFullDiskAccess() {
@@ -335,8 +342,38 @@
   {:else}
     <section class="settings-section">
       <h2><RotateCw size={16} /> App</h2>
-      <p>Reinstall the app wrapper from this repo and restart the backend with the latest code.</p>
-      <div class="settings-actions"><button type="button" on:click={relaunchApp}>Relaunch with latest code</button></div>
+      <div class="app-update-card">
+        <div>
+          <strong>
+            {$chatState.appUpdate
+              ? $chatState.appUpdate.update_available
+                ? $chatState.appUpdate.latest?.title || "Update available"
+                : "Sankalp is up to date"
+              : "Updates"}
+          </strong>
+          <span>
+            Installed {$chatState.appUpdate?.current_version || "unknown"}
+            {#if $chatState.appUpdate?.latest_version}
+              · Latest {$chatState.appUpdate.latest_version}
+            {/if}
+          </span>
+        </div>
+        {#if $chatState.appUpdate?.update_available}
+          <button type="button" on:click={updateApp}><Download size={16} /> Update and relaunch</button>
+        {/if}
+      </div>
+      {#if $chatState.appUpdate?.latest?.notes?.length}
+        <ul class="update-notes">
+          {#each $chatState.appUpdate.latest.notes as note}
+            <li>{note}</li>
+          {/each}
+        </ul>
+      {/if}
+      {#if $chatState.appUpdate?.error}<p>{$chatState.appUpdate.error}</p>{/if}
+      <p>Updates are checked from the stable GitHub manifest and installed only after confirmation.</p>
+      <div class="settings-actions">
+        <button type="button" on:click={checkUpdates}>Check for updates</button>
+      </div>
       {#if appStatus}<p>{appStatus}</p>{/if}
     </section>
   {/if}

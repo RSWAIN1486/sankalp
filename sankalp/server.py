@@ -11,12 +11,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
-from sankalp.macos import install_macos_app, macos_status, open_full_disk_access, relaunch_with_latest_code
+from sankalp.macos import install_macos_app, macos_status, open_full_disk_access
 from sankalp.memory import ObsidianMemory
 from sankalp.provider_models import codex_status, provider_models, start_codex_login
 from sankalp.sessions import SessionStore
 from sankalp.settings import discover_obsidian_vaults, load_settings, save_settings
 from sankalp.tools import ToolRegistry
+from sankalp.updater import app_update_status, start_app_update
 
 
 def build_agent() -> Agent:
@@ -114,6 +115,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"vaults": discover_obsidian_vaults()})
             if parsed.path == "/api/macos/status":
                 return self._json({"macos": macos_status()})
+            if parsed.path == "/api/app/update":
+                return self._json({"update": app_update_status()})
             if parsed.path == "/api/profile":
                 return self._json({"profile": AGENT.memory.read_profile()})
             if parsed.path == "/api/settings":
@@ -190,8 +193,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"macos": install_macos_app()})
             if parsed.path == "/api/macos/open-full-disk-access":
                 return self._json({"macos": open_full_disk_access()})
-            if parsed.path == "/api/app/relaunch":
-                return self._json({"relaunch": relaunch_with_latest_code()})
+            if parsed.path == "/api/app/update":
+                return self._json({"update": start_app_update()})
             if parsed.path == "/api/codex/login":
                 return self._json({"codex": start_codex_login()})
             if parsed.path == "/api/memory/open":

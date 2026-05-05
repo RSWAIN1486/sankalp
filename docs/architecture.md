@@ -22,6 +22,8 @@ existing `/api/*` routes.
   Obsidian open helpers.
 - `sankalp/tools/registry.py`: small explicit tools with structured logged results,
   including auditable Obsidian search.
+- `sankalp/updater.py`: explicit app update checks against the stable GitHub manifest and
+  confirmed installer launches.
 - `web/`: SvelteKit/TypeScript frontend that follows the llama.cpp WebUI direction:
   routes, components, stores, services, and browser storage. It currently calls the existing
   backend APIs through the Vite dev proxy during development, and is served by the Python
@@ -50,7 +52,8 @@ Current frontend layers:
 - `web/src/lib/components/*`: chat shell, collapsible sidebar, message list, composer,
   inline activity details, and settings drawer.
 - `web/src/lib/stores/chat.ts`: session/message/tool state, chat streaming orchestration,
-  composer preferences, and sidebar filtering.
+  composer preferences, provider-scoped model selection, model catalog loading, and sidebar
+  filtering.
 - `web/src/lib/services/api.ts`: typed JSON fetch helper and SSE parser.
 - `web/src/lib/storage/db.ts`: Dexie database for local UI cache and preferences.
 
@@ -70,12 +73,21 @@ validated without first pushing to GitHub. The default `~/.sankalp/app` checkout
 as managed application code: curl updates reset it to `origin/main` so upgrades recover from
 dirty local test installs, while user state remains in sibling `~/.sankalp` data folders.
 
+App updates are release-manifest driven rather than commit-driven. `update.json` is the
+stable channel contract; bump its `version` and `sankalp.__version__` only for changes worth
+surfacing to installed users. The WebUI checks `/api/app/update` at startup using a daily
+browser cache, shows a small header signal and dismissible banner when the remote manifest
+is newer, and keeps the detailed release notes plus the confirmed `Update and relaunch`
+action in Settings -> App. The update action starts the installer in the background, which
+resets the managed app checkout to GitHub `main`, rebuilds the WebUI, reinstalls
+`Sankalp.app`, and reopens it.
+
 The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
-collapsible left sidebar, the top bar only exposes settings, and detailed surfaces move into
-a settings drawer. The drawer carries provider setup, Obsidian memory configuration, user
-profile, and app relaunch controls. The Memory nav item opens the settings drawer directly
-on the memory tab, where the UI can browse workspace children, preview notes recursively,
-and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
+collapsible left sidebar, the top bar exposes settings and update availability, and detailed
+surfaces move into a settings drawer. The drawer carries provider setup, Obsidian memory
+configuration, user profile, and explicit app update controls. The Memory nav item opens the
+settings drawer directly on the memory tab, where the UI can browse workspace children,
+preview notes recursively, and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
 not shown as a right sidebar; it appears as a collapsible Markdown-rendered block above the
 latest assistant message when the session has tool calls.
 
@@ -164,6 +176,14 @@ Native providers today:
 - `codex`
 - `gemini`
 - `openai`
+
+The composer treats provider and model as a pair. Model options are loaded through
+`/api/models?provider=...` and cached in frontend state by provider, while the selected
+model is remembered per provider in Dexie. Switching from a local OpenAI-compatible runtime
+to Codex, Gemini, or OpenAI therefore selects that provider's configured or listed model
+instead of carrying the previous provider's model string into the new request. The
+OpenAI-compatible provider also attempts `<base-url>/models` and falls back to its configured
+model when the runtime does not expose a model list.
 
 ## Constraints
 

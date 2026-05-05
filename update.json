@@ -1,0 +1,11 @@
+{
+  "version": "0.1.1",
+  "channel": "stable",
+  "title": "Local app installer and updater",
+  "notes": [
+    "One-command macOS app installation",
+    "Built WebUI served from the local Python backend",
+    "Cleaner app launcher and managed checkout updates"
+  ],
+  "minimum_supported_version": "0.1.0"
+}

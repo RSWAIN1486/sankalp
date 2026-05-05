@@ -1,7 +1,12 @@
 import { derived, get, writable } from "svelte/store";
 import { api, streamChat } from "$lib/services/api";
 import { db, loadComposerPreference, saveComposerPreference } from "$lib/storage/db";
-import type { ChatMessage, ComposerOptions, SessionSummary, Settings, StreamEvent, ToolCall } from "$lib/types";
+import type { AppUpdateStatus, ChatMessage, ComposerOptions, ModelOption, ProviderModels, SessionSummary, Settings, StreamEvent, ToolCall } from "$lib/types";
+
+type ModelCatalogEntry = ProviderModels & {
+  loading?: boolean;
+  loaded?: boolean;
+};
 
 type ChatState = {
   sessions: SessionSummary[];
@@ -14,10 +19,24 @@ type ChatState = {
   draft: string;
   editIndex: number | null;
   composer: ComposerOptions;
+  composerModelsByProvider: Record<string, string>;
+  modelCatalog: Record<string, ModelCatalogEntry>;
   settingsOpen: boolean;
   settingsTab: "provider" | "memory" | "profile" | "app";
   sidebarCollapsed: boolean;
+  appUpdate: AppUpdateStatus | null;
+  updateBannerDismissed: boolean;
 };
+
+const providerOptions: Array<{ id: string; label: string }> = [
+  { id: "local", label: "Local fallback" },
+  { id: "local_openai", label: "OpenAI-compatible" },
+  { id: "codex", label: "Codex CLI" },
+  { id: "gemini", label: "Gemini API" },
+  { id: "openai", label: "OpenAI API" }
+];
+
+const providerLabels = Object.fromEntries(providerOptions.map((provider) => [provider.id, provider.label]));
 
 const defaultComposer: ComposerOptions = {
   provider: "local",
@@ -36,9 +55,13 @@ const initialState: ChatState = {
   draft: "",
   editIndex: null,
   composer: defaultComposer,
+  composerModelsByProvider: {},
+  modelCatalog: {},
   settingsOpen: false,
   settingsTab: "provider",
-  sidebarCollapsed: false
+  sidebarCollapsed: false,
+  appUpdate: null,
+  updateBannerDismissed: false
 };
 
 export const chatState = writable<ChatState>(initialState);
@@ -52,14 +75,11 @@ export const visibleSessions = derived(chatState, ($state) => {
 export const providerLabel = derived(chatState, ($state) => {
   const provider = $state.composer.provider || $state.settings.provider || "local";
   const model = $state.composer.model || modelForProvider(provider, $state.settings);
-  const labels: Record<string, string> = {
-    local: "Local fallback",
-    local_openai: "OpenAI-compatible",
-    codex: "Codex CLI",
-    gemini: "Gemini API",
-    openai: "OpenAI API"
-  };
-  return model ? `${labels[provider] || provider} / ${model}` : labels[provider] || provider;
+  return model ? `${providerLabels[provider] || provider} / ${model}` : providerLabels[provider] || provider;
+});
+
+export const composerModelOptions = derived(chatState, ($state) => {
+  return modelOptionsForProvider($state.composer.provider, $state);
 });
 
 export async function initializeChat(): Promise<void> {
@@ -69,18 +89,27 @@ export async function initializeChat(): Promise<void> {
     loadComposerPreference()
   ]);
   const settings = settingsData.settings || {};
+  const provider = preference.provider || settings.provider || "local";
+  const modelsByProvider = {
+    ...defaultModelsByProvider(settings),
+    ...(preference.models_by_provider || {})
+  };
   const composer = {
     ...defaultComposer,
-    provider: preference.provider || settings.provider || "local",
-    model: preference.model || modelForProvider(preference.provider || settings.provider || "local", settings),
+    provider,
+    model: selectedModelForProvider(provider, settings, modelsByProvider),
     reasoning_effort: preference.reasoning_effort || "auto"
   };
   chatState.update((state) => ({
     ...state,
     sessions: sessionsData.sessions || [],
     settings,
-    composer
+    composer,
+    composerModelsByProvider: modelsByProvider
   }));
+  void ensureProviderModels(provider);
+  void Promise.all(["local_openai", "codex", "gemini", "openai"].map((item) => ensureProviderModels(item)));
+  void checkAppUpdate();
   await db.sessions.bulkPut((sessionsData.sessions || []).map((session) => ({ ...session, cached_at: Date.now() })));
 }
 
@@ -157,11 +186,31 @@ export async function sendMessage(text: string, editIndex: number | null = null)
 
 export async function updateComposer(next: Partial<ComposerOptions>): Promise<void> {
   let composer: ComposerOptions = defaultComposer;
+  let modelsByProvider: Record<string, string> = {};
   chatState.update((state) => {
-    composer = { ...state.composer, ...next };
-    return { ...state, composer };
+    const providerChanged = typeof next.provider === "string" && next.provider !== state.composer.provider;
+    const provider = next.provider || state.composer.provider || state.settings.provider || "local";
+    modelsByProvider = { ...state.composerModelsByProvider };
+
+    if (typeof next.model === "string") {
+      modelsByProvider[provider] = next.model;
+    }
+
+    const model = providerChanged
+      ? selectedModelForProvider(provider, state.settings, modelsByProvider, state.modelCatalog)
+      : typeof next.model === "string"
+        ? next.model
+        : state.composer.model;
+
+    if (providerChanged) {
+      modelsByProvider[provider] = model;
+    }
+
+    composer = { ...state.composer, ...next, provider, model };
+    return { ...state, composer, composerModelsByProvider: modelsByProvider };
   });
-  await saveComposerPreference(composer);
+  await saveComposerPreference({ ...composer, models_by_provider: modelsByProvider });
+  if (next.provider) void ensureProviderModels(next.provider);
 }
 
 export function setSearch(search: string): void {
@@ -248,8 +297,119 @@ export function closeSettings(): void {
   chatState.update((state) => ({ ...state, settingsOpen: false }));
 }
 
+export function dismissUpdateBanner(): void {
+  const version = get(chatState).appUpdate?.latest_version || "";
+  if (version) localStorage.setItem("sankalp-update-dismissed-version", version);
+  chatState.update((state) => ({ ...state, updateBannerDismissed: true }));
+}
+
+export async function checkAppUpdate(force = false): Promise<void> {
+  const lastChecked = Number(localStorage.getItem("sankalp-update-last-checked") || "0");
+  const oneDay = 24 * 60 * 60 * 1000;
+  if (!force && Date.now() - lastChecked < oneDay) {
+    const cached = localStorage.getItem("sankalp-update-status");
+    if (cached) {
+      try {
+        const update = JSON.parse(cached) as AppUpdateStatus | null;
+        const dismissedVersion = localStorage.getItem("sankalp-update-dismissed-version") || "";
+        chatState.update((state) => ({
+          ...state,
+          appUpdate: update,
+          updateBannerDismissed: Boolean(update?.update_available && update.latest_version && dismissedVersion === update.latest_version)
+        }));
+      } catch {
+        localStorage.removeItem("sankalp-update-status");
+      }
+    }
+    return;
+  }
+
+  try {
+    const data = await api<{ update: AppUpdateStatus }>("/api/app/update");
+    localStorage.setItem("sankalp-update-last-checked", String(Date.now()));
+    localStorage.setItem("sankalp-update-status", JSON.stringify(data.update || null));
+    const dismissedVersion = localStorage.getItem("sankalp-update-dismissed-version") || "";
+    const latestVersion = data.update?.latest_version || "";
+    chatState.update((state) => ({
+      ...state,
+      appUpdate: data.update || null,
+      updateBannerDismissed: Boolean(data.update?.update_available && latestVersion && dismissedVersion === latestVersion)
+    }));
+  } catch {
+    if (force) {
+      chatState.update((state) => ({
+        ...state,
+        appUpdate: { ok: false, error: "Could not check for updates." }
+      }));
+    }
+  }
+}
+
+export async function startAppUpdate(): Promise<void> {
+  const data = await api<{ update: AppUpdateStatus }>("/api/app/update", { method: "POST", body: "{}" });
+  chatState.update((state) => ({ ...state, appUpdate: data.update || state.appUpdate }));
+}
+
 export function refreshSettings(settings: Settings): void {
-  chatState.update((state) => ({ ...state, settings }));
+  chatState.update((state) => {
+    const defaults = defaultModelsByProvider(settings);
+    const modelsByProvider = { ...defaults, ...state.composerModelsByProvider };
+    const provider = state.composer.provider || settings.provider || "local";
+    const model = state.composer.model || selectedModelForProvider(provider, settings, modelsByProvider, state.modelCatalog);
+    return {
+      ...state,
+      settings,
+      composerModelsByProvider: modelsByProvider,
+      composer: { ...state.composer, provider, model }
+    };
+  });
+}
+
+export async function ensureProviderModels(provider: string, force = false): Promise<void> {
+  if (!["local_openai", "codex", "gemini", "openai"].includes(provider)) return;
+  const current = get(chatState).modelCatalog[provider];
+  if (current?.loading || (current?.loaded && !force)) return;
+  chatState.update((state) => ({
+    ...state,
+    modelCatalog: {
+      ...state.modelCatalog,
+      [provider]: {
+        provider,
+        models: current?.models || [],
+        source: current?.source,
+        error: current?.error,
+        loading: true,
+        loaded: false
+      }
+    }
+  }));
+  try {
+    const data = await api<{ models: ProviderModels }>(`/api/models?provider=${encodeURIComponent(provider)}`);
+    const payload = normalizeProviderModels(provider, data.models);
+    chatState.update((state) => {
+      const catalog = {
+        ...state.modelCatalog,
+        [provider]: { ...payload, loading: false, loaded: true }
+      };
+      if (state.composer.provider !== provider) return { ...state, modelCatalog: catalog };
+      const selected = selectedModelForProvider(provider, state.settings, state.composerModelsByProvider, catalog);
+      return {
+        ...state,
+        modelCatalog: catalog,
+        composer: { ...state.composer, model: selected },
+        composerModelsByProvider: { ...state.composerModelsByProvider, [provider]: selected }
+      };
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not load models";
+    chatState.update((state) => ({
+      ...state,
+      modelCatalog: {
+        ...state.modelCatalog,
+        [provider]: { provider, models: [], source: "error", error: message, loading: false, loaded: true }
+      }
+    }));
+  }
 }
 
 function handleStreamEvent(item: StreamEvent): void {
@@ -311,4 +471,54 @@ function modelForProvider(provider: string | undefined, settings: Settings): str
   if (provider === "gemini") return settings.gemini_model || "";
   if (provider === "openai") return settings.openai_model || "";
   return "";
+}
+
+function defaultModelsByProvider(settings: Settings): Record<string, string> {
+  return {
+    local: "",
+    local_openai: settings.local_openai_model || "",
+    codex: settings.codex_model || "",
+    gemini: settings.gemini_model || "",
+    openai: settings.openai_model || ""
+  };
+}
+
+function selectedModelForProvider(
+  provider: string,
+  settings: Settings,
+  modelsByProvider: Record<string, string>,
+  catalog: Record<string, ModelCatalogEntry> = {}
+): string {
+  if (provider === "local") return "";
+  const saved = modelsByProvider[provider] || "";
+  const configured = modelForProvider(provider, settings);
+  const available = catalog[provider]?.models || [];
+  if (saved && (!available.length || available.some((model) => model.id === saved))) return saved;
+  if (configured && (!available.length || available.some((model) => model.id === configured))) return configured;
+  return available[0]?.id || saved || configured || "";
+}
+
+function modelOptionsForProvider(provider: string, state: ChatState): ModelOption[] {
+  if (provider === "local") return [{ id: "", label: "No model" }];
+  const selected = state.composer.model || selectedModelForProvider(provider, state.settings, state.composerModelsByProvider, state.modelCatalog);
+  const models = [...(state.modelCatalog[provider]?.models || [])];
+  if (provider === "local_openai" && !models.length && selected) {
+    models.push({ id: selected, label: selected });
+  }
+  if (selected && !models.some((model) => model.id === selected)) {
+    models.unshift({ id: selected, label: selected });
+  }
+  return models;
+}
+
+function normalizeProviderModels(provider: string, payload?: ProviderModels): ProviderModels {
+  const models = (payload?.models || [])
+    .filter((model) => model && model.id)
+    .map((model) => ({ id: model.id, label: model.label || model.id }));
+  return {
+    provider: payload?.provider || provider,
+    models,
+    source: payload?.source || "unknown",
+    error: payload?.error || null
+  };
 }

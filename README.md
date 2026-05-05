@@ -61,6 +61,10 @@ The default `~/.sankalp/app` checkout is managed application code. Curl installs
 checkout to `origin/main` so upgrades can recover from partial or local test installs. User
 state, sessions, settings, and memory live outside that checkout under `~/.sankalp/`.
 
+Installed users are notified through the in-app updater only when `update.json` advertises a
+new stable version. Bump `update.json` and `sankalp/__init__.py` together for releases worth
+surfacing in the UI.
+
 ### Development Install
 
 Clone or enter the repo:
@@ -147,7 +151,7 @@ Profile tab:
 
 App tab:
 
-- Relaunch with latest code when using the local macOS wrapper flow.
+- Check for stable app updates and install them after confirmation.
 
 ## Useful Environment Variables
 

@@ -43,6 +43,8 @@ CODEX_LOGIN_LOG = Path.home() / ".sankalp" / "codex-login.log"
 
 def provider_models(provider: str) -> dict[str, Any]:
     settings = load_settings(include_secrets=True)
+    if provider == "local_openai":
+        return _local_openai_models(settings)
     if provider == "openai":
         return _openai_models(settings)
     if provider == "gemini":
@@ -106,6 +108,33 @@ def _openai_models(settings: dict[str, Any]) -> dict[str, Any]:
         return {"provider": "openai", "models": models or OPENAI_FALLBACK, "source": "live", "error": None}
     except Exception as exc:
         return {"provider": "openai", "models": OPENAI_FALLBACK, "source": "fallback", "error": str(exc)}
+
+
+def _local_openai_models(settings: dict[str, Any]) -> dict[str, Any]:
+    base_url = str(settings.get("local_openai_base_url") or "").rstrip("/")
+    configured = str(settings.get("local_openai_model") or "").strip()
+    configured_models = [{"id": configured, "label": configured}] if configured else []
+    if not base_url:
+        return {"provider": "local_openai", "models": configured_models, "source": "configured", "error": None}
+    headers = {"Content-Type": "application/json"}
+    api_key = str(settings.get("local_openai_api_key") or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        request = urllib.request.Request(f"{base_url}/models", headers=headers, method="GET")
+        with urllib.request.urlopen(request, timeout=8) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        ids = sorted({
+            str(item.get("id") or "").strip()
+            for item in data.get("data", [])
+            if str(item.get("id") or "").strip()
+        })
+        models = [{"id": model_id, "label": _label(model_id)} for model_id in ids]
+        if configured and not any(model["id"] == configured for model in models):
+            models.insert(0, {"id": configured, "label": configured})
+        return {"provider": "local_openai", "models": models or configured_models, "source": "live", "error": None}
+    except Exception as exc:
+        return {"provider": "local_openai", "models": configured_models, "source": "configured", "error": str(exc)}
 
 
 def _gemini_models(settings: dict[str, Any]) -> dict[str, Any]:

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { ComposerOptions, SessionSummary } from "$lib/types";
+import type { ComposerOptions, ComposerPreference, SessionSummary } from "$lib/types";
 
 export type DraftRecord = {
   session_id: string;
@@ -33,11 +33,11 @@ class SankalpWebDb extends Dexie {
 
 export const db = new SankalpWebDb();
 
-export async function saveComposerPreference(value: ComposerOptions): Promise<void> {
+export async function saveComposerPreference(value: ComposerPreference): Promise<void> {
   await db.preferences.put({ key: "composer", value });
 }
 
-export async function loadComposerPreference(): Promise<Partial<ComposerOptions>> {
+export async function loadComposerPreference(): Promise<ComposerPreference> {
   const record = await db.preferences.get("composer");
-  return (record?.value || {}) as Partial<ComposerOptions>;
+  return (record?.value || {}) as ComposerPreference;
 }

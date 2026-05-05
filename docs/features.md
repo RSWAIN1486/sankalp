@@ -82,4 +82,5 @@ from safe read/search tools before normal chat.
 - The installer and app wrapper free the configured Sankalp port before starting when needed.
 - Installs a lightweight `~/Applications/Sankalp.app` wrapper.
 - Opens the Full Disk Access settings pane.
-- Relaunches the app-backed server with latest repo code from Settings.
+- Checks a stable GitHub update manifest, shows update availability in the main UI, and
+  installs updates only after user confirmation.

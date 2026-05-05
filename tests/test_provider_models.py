@@ -39,6 +39,13 @@ class ProviderModelsTests(unittest.TestCase):
         self.assertEqual(result["source"], "fallback")
         self.assertEqual(result["error"], "not logged in")
 
+    def test_local_openai_models_include_configured_model_without_base_url(self):
+        with patch("sankalp.provider_models.load_settings", return_value={"local_openai_model": "qwen3:latest"}):
+            result = get_provider_models("local_openai")
+
+        self.assertEqual(result["source"], "configured")
+        self.assertEqual(result["models"], [{"id": "qwen3:latest", "label": "qwen3:latest"}])
+
     def test_gemini_filter_excludes_non_chat_models(self):
         self.assertTrue(provider_models._is_gemini_chat_model("gemini-3.1-pro-preview"))
         self.assertFalse(provider_models._is_gemini_chat_model("gemini-3-pro-preview"))
