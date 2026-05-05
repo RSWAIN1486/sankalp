@@ -1,15 +1,16 @@
 # Sankalp Architecture
 
-Sankalp is a local-first personal assistant with auditable memory. The MVP uses one Python
-stdlib HTTP server, JSON session files, Obsidian-compatible Markdown memory, explicit local
-tools, provider adapters, and a vanilla HTML/CSS/JS UI.
+Sankalp is a local-first personal assistant with auditable memory. The current backend uses
+one Python stdlib HTTP server, JSON session files, Obsidian-compatible Markdown memory,
+explicit local tools, provider adapters, and JSON/SSE APIs.
 
-The project stays intentionally small: no frontend framework, database, queue, bundler, or
-plugin runtime until usage proves the need.
+The product direction is now a professional WebUI and durable backend architecture. The
+Python backend is API-only; the `web/` SvelteKit app is the browser UI and consumes the
+existing `/api/*` routes.
 
 ## Components
 
-- `sankalp/server.py`: loopback HTTP server, static UI, JSON APIs, and SSE chat route.
+- `sankalp/server.py`: loopback HTTP server, JSON APIs, and SSE chat route.
 - `sankalp/agent/core.py`: turn orchestration, explicit command routing, memory retrieval,
   memory-search intent routing, session updates, edit/resend branching, and background
   generated titles.
@@ -20,14 +21,62 @@ plugin runtime until usage proves the need.
   Obsidian open helpers.
 - `sankalp/tools/registry.py`: small explicit tools with structured logged results,
   including auditable Obsidian search.
-- `sankalp/static/*`: chat, profile, memory, and settings UI.
-  Chat messages detect referenced Obsidian `.md` paths and render open-note controls that
-  reuse `/api/memory/open`.
+- `web/`: SvelteKit/TypeScript frontend that follows the llama.cpp WebUI direction:
+  routes, components, stores, services, and browser storage. It currently calls the existing
+  backend APIs through the Vite dev proxy.
+- `web/src/lib/storage/db.ts`: Dexie/IndexedDB storage for browser-local UI state. The first
+  stored data is composer preferences and cached session summaries. IndexedDB is not the
+  source of truth for long-term memory.
+
+## Frontend Migration
+
+The WebUI is intentionally separated from the backend migration so it can be built and
+reviewed incrementally.
+
+```text
+Svelte route
+  -> App shell
+  -> components
+  -> chat store
+  -> API service / Dexie storage
+  -> existing /api/* backend
+```
+
+Current frontend layers:
+
+- `web/src/routes/+page.svelte`: bootstraps the WebUI and loads initial API state.
+- `web/src/lib/components/*`: chat shell, collapsible sidebar, message list, composer,
+  inline activity details, and settings drawer.
+- `web/src/lib/stores/chat.ts`: session/message/tool state, chat streaming orchestration,
+  composer preferences, and sidebar filtering.
+- `web/src/lib/services/api.ts`: typed JSON fetch helper and SSE parser.
+- `web/src/lib/storage/db.ts`: Dexie database for local UI cache and preferences.
+
+The design choice is to keep the current backend stable while replacing the UI foundation.
+This avoids a combined frontend/backend rewrite and lets the professional shell prove the
+data contracts before SQLite and typed backend routes are introduced.
+
+The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
+collapsible left sidebar, the top bar only exposes settings, and detailed surfaces move into
+a settings drawer. The drawer carries provider setup, Obsidian memory configuration, user
+profile, and app relaunch controls. The Memory nav item opens the settings drawer directly
+on the memory tab, where the UI can browse workspace children, preview notes recursively,
+and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
+not shown as a right sidebar; it appears as a collapsible Markdown-rendered block above the
+latest assistant message when the session has tool calls.
+
+Message and session actions are handled in the WebUI against the existing backend contracts.
+Message copy uses the browser clipboard, edit/regenerate reuse `/api/chat/stream` with the
+backend `edit_index` path, and branch deletion persists through `/api/session/truncate`,
+which removes the selected message and all later messages from the JSON session. Conversation
+rename/delete call the existing session APIs, while export is a browser-side Markdown
+download built from `/api/session`.
 
 ## Flow
 
 ```text
 Browser
+  -> SvelteKit WebUI
   -> /api/chat/stream
   -> Agent.turn
   -> SessionStore get/create
@@ -90,8 +139,9 @@ LLM selection is useful for wording flexibility, not for hidden side effects.
 ## Providers
 
 Settings store provider configuration locally in `~/.sankalp/settings.json`, with API keys
-masked from normal reads. Composer-level provider/model/reasoning choices are stored in
-browser local storage so refreshes keep the chat selection without changing saved Settings.
+masked from normal reads. In the `web/` UI, browser-local UI state lives in Dexie/IndexedDB
+so drafts, cached sessions, attachment metadata, and preferences can share one local storage
+layer.
 
 Native providers today:
 

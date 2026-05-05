@@ -93,6 +93,15 @@ class SessionStore:
         path.unlink()
         return True
 
+    def truncate_messages(self, session_id: str, index: int) -> Session:
+        session = self.get(session_id)
+        safe_index = max(0, min(index, len(session.messages)))
+        session.messages = session.messages[:safe_index]
+        session.tool_calls = []
+        session.previous_response_id = None
+        self.save(session)
+        return session
+
 
 def title_from_query(query: str) -> str:
     text = re.sub(r"\s+", " ", query).strip()

@@ -1,31 +1,113 @@
 # Sankalp
 
-Sankalp is a local-first personal assistant runtime with durable, human-readable memory.
+Sankalp is a local-first personal assistant with chat sessions, auditable tool activity,
+provider switching, and human-readable Obsidian-compatible memory.
 
-The v1 shape is intentionally small:
+The current app has two parts:
 
-- A browser chat UI
-- JSON session history
-- Obsidian-compatible Markdown memory
-- A visible activity/tool log
-- Conservative local tools
-- Local settings for Local fallback, OpenAI-compatible endpoint, Codex CLI, Gemini API,
-  or OpenAI API providers
-- A user profile panel backed by `People/you.md`
+- Python backend: local JSON/SSE APIs, provider adapters, sessions, tools, and memory.
+- SvelteKit WebUI: the main chat interface, settings drawer, memory browser, and session
+  controls.
 
-## Docs
+The Python backend is API-only. Use the SvelteKit WebUI for the browser interface.
 
-- [Architecture](docs/architecture.md)
-- [Features](docs/features.md)
-- [MVP spec](docs/MVP_SPEC.md)
+## Requirements
+
+- macOS or Linux
+- Python 3.9+
+- Node.js 24 via `nvm` for the WebUI
+
+On this Mac, `nvm` is already expected at `~/.nvm/nvm.sh`. If Node is not installed:
+
+```sh
+source ~/.nvm/nvm.sh
+nvm install 24
+```
+
+## Install
+
+Clone or enter the repo:
+
+```sh
+cd /Users/rswai/sankalp
+```
+
+Install WebUI dependencies:
+
+```sh
+cd web
+source ~/.nvm/nvm.sh
+nvm use
+npm install
+```
 
 ## Run
 
+Start the Sankalp backend in one terminal:
+
 ```sh
+cd /Users/rswai/sankalp
 python3 server.py
 ```
 
-Then open <http://127.0.0.1:8765>.
+The backend listens on:
+
+```text
+http://127.0.0.1:8765
+```
+
+Start the WebUI in a second terminal:
+
+```sh
+cd /Users/rswai/sankalp/web
+source ~/.nvm/nvm.sh
+nvm use
+npm run dev -- --port 5173
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
+The WebUI proxies `/api/*` to the backend at `http://127.0.0.1:8765`.
+
+## First Setup
+
+Open Settings from the gear icon.
+
+Provider tab:
+
+- `Local fallback`: no external model call; useful for testing.
+- `OpenAI-compatible endpoint`: use llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, or
+  another `/v1/chat/completions` server.
+- `Codex CLI`: uses your local Codex login.
+- `Gemini API`: uses a Gemini API key.
+- `OpenAI API`: uses an OpenAI API key.
+
+For a llama.cpp-style local endpoint, set:
+
+```text
+Base URL: http://localhost:2276/v1
+Model: the model name served by llama.cpp
+```
+
+Memory tab:
+
+- Set an Obsidian vault path.
+- Choose an optional workspace subfolder.
+- Browse subfolders and notes.
+- Open notes in Obsidian or folders in Finder.
+
+Profile tab:
+
+- Add your own user profile.
+- Review or delete agent-inferred traits.
+
+App tab:
+
+- Relaunch with latest code when using the local macOS wrapper flow.
 
 ## Useful Environment Variables
 
@@ -33,20 +115,19 @@ Then open <http://127.0.0.1:8765>.
 - `SANKALP_PORT`: bind port, default `8765`
 - `SANKALP_STATE_DIR`: runtime state, default `~/.sankalp`
 - `SANKALP_OBSIDIAN_VAULT`: Markdown memory vault, default `~/.sankalp/obsidian-vault`
-- `SANKALP_MODEL`: OpenAI model, default `gpt-5.5`
-- `OPENAI_API_KEY`: enables model-backed responses
+- `SANKALP_MODEL`: default OpenAI model, default `gpt-5.5`
+- `OPENAI_API_KEY`: enables OpenAI-backed responses
 - `GEMINI_API_KEY`: optional fallback for Gemini when no key is saved in UI settings
 - `SANKALP_ALLOW_TERMINAL`: set to `1` to allow `/sh ...` commands
 - `SANKALP_ALLOWED_ROOTS`: path list for file tools, separated by `:`
 
-Provider settings can also be configured from the Settings icon in the UI. API keys are
-stored locally in `~/.sankalp/settings.json`.
+Provider settings and API keys are stored locally in:
 
-For local or hosted OpenAI-compatible runtimes, set provider to `OpenAI-compatible endpoint`,
-choose a preset or enter a base URL such as `http://localhost:2276/v1`, and provide the
-model name exposed by that runtime. Sankalp calls `<base-url>/chat/completions`.
+```text
+~/.sankalp/settings.json
+```
 
-## MVP Commands
+## Chat Commands
 
 Inside chat:
 
@@ -56,37 +137,66 @@ Inside chat:
 - `/append path/to/file :: text` appends text within allowed roots
 - `/sh command` runs a terminal command only when terminal access is enabled
 
-Memory follows the append-first rule. Raw captures go to `Inbox/`, session traces go to
-`Sessions/`, and curated notes can be promoted manually or by a later summarizer.
+## Data Locations
 
-## User Profile
+Runtime state:
 
-The profile icon opens `People/you.md` as structured profile memory:
+```text
+~/.sankalp/
+```
 
-- `User-authored profile`: your own description of yourself and your preferences.
-- `Agent-inferred traits`: low-confidence traits inferred from conversation.
+Sessions:
 
-Inferred traits are stored as separate Markdown blocks so you can delete wrong traits from
-the UI without deleting the whole profile.
+```text
+~/.sankalp/sessions/
+```
 
-## Obsidian Vault Sync
+Default memory vault:
 
-The Memory screen can point Sankalp at a real Obsidian vault and an optional workspace
-subfolder inside that vault. On macOS, Obsidian vaults under `~/Documents` may require Full
-Disk Access for the terminal process running Sankalp. If access is blocked, the UI shows the
-permission error and keeps the app running.
+```text
+~/.sankalp/obsidian-vault/
+```
 
-Once the vault is readable, the workspace selector is populated from the vault's folder
-tree. Selecting a folder shows screen-wide cards for its immediate subfolders. `View all
-notes` opens a preview modal for notes found recursively under the selected workspace or
-subfolder. Markdown notes can be opened directly in Obsidian; folders open in Finder because
-Obsidian's public URI scheme is file-oriented.
+Memory follows an append-first structure:
 
-On macOS, use the Memory screen to install `~/Applications/Sankalp.app` and open System
-Settings > Privacy & Security > Full Disk Access. Grant access to `Sankalp.app`, then quit
-the terminal-run server and launch Sankalp from the app so macOS attributes vault reads to
-the app.
+```text
+People/you.md
+Projects/
+Sessions/
+Skills/
+Inbox/
+Decisions/
+```
 
-The Settings screen includes `Relaunch with latest code`, which reinstalls the app wrapper
-from this repo and restarts the backend. See [Features](docs/features.md) for the full
-current feature list.
+## macOS Full Disk Access
+
+If your Obsidian vault is under protected locations such as `~/Documents`, macOS may block
+access when Sankalp is launched from a terminal. Grant Full Disk Access to the app or
+terminal process that runs Sankalp.
+
+The Memory tab has a Full Disk Access shortcut when macOS support is available.
+
+## Development Checks
+
+Backend checks:
+
+```sh
+python3 -m unittest tests/test_sessions.py tests/test_settings.py
+```
+
+WebUI checks:
+
+```sh
+cd web
+source ~/.nvm/nvm.sh
+nvm use
+npm run check
+npm run build
+```
+
+## Docs
+
+- [Architecture](docs/architecture.md)
+- [Features](docs/features.md)
+- [MVP spec](docs/MVP_SPEC.md)
+- [WebUI notes](web/README.md)

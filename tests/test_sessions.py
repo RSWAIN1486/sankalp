@@ -32,6 +32,25 @@ class SessionStoreTests(unittest.TestCase):
             self.assertEqual(updated.title, "Manual Title")
             self.assertEqual(updated.title_source, "manual")
 
+    def test_truncate_messages_removes_branch_and_tool_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SessionStore(Path(tmp))
+            session = store.create()
+            session.messages = [
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "two"},
+                {"role": "user", "content": "three"},
+            ]
+            session.tool_calls = [{"name": "memory_search", "status": "ok"}]
+            session.previous_response_id = "resp_123"
+            store.save(session)
+
+            truncated = store.truncate_messages(session.session_id, 1)
+
+            self.assertEqual(truncated.messages, [{"role": "user", "content": "one"}])
+            self.assertEqual(truncated.tool_calls, [])
+            self.assertIsNone(truncated.previous_response_id)
+
 
 if __name__ == "__main__":
     unittest.main()

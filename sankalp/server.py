@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import mimetypes
 import traceback
 import subprocess
 import time
@@ -17,9 +16,6 @@ from sankalp.provider_models import codex_status, provider_models, start_codex_l
 from sankalp.sessions import SessionStore
 from sankalp.settings import discover_obsidian_vaults, load_settings, save_settings
 from sankalp.tools import ToolRegistry
-
-
-STATIC_DIR = ROOT / "sankalp" / "static"
 
 
 def build_agent() -> Agent:
@@ -55,9 +51,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             parsed = urlparse(self.path)
             if parsed.path == "/":
-                return self._static("index.html")
-            if parsed.path.startswith("/static/"):
-                return self._static(parsed.path.removeprefix("/static/"))
+                return self._json({
+                    "ok": True,
+                    "name": "Sankalp",
+                    "backend": f"http://{HOST}:{PORT}",
+                    "webui": "Start the SvelteKit WebUI from ./web and open http://127.0.0.1:5173",
+                })
             if parsed.path == "/api/health":
                 return self._json({"ok": True})
             if parsed.path == "/api/sessions":
@@ -133,6 +132,17 @@ class Handler(BaseHTTPRequestHandler):
                 deleted = AGENT.sessions.delete(session_id)
                 memory_deleted = AGENT.memory.delete_session_notes(session_id) if deleted else 0
                 return self._json({"deleted": deleted, "memory_deleted": memory_deleted, "sessions": AGENT.sessions.list()})
+            if parsed.path == "/api/session/truncate":
+                body = self._body()
+                session = AGENT.sessions.truncate_messages(
+                    str(body.get("session_id") or ""),
+                    int(body.get("index") or 0),
+                )
+                return self._json({
+                    "session": session.compact(),
+                    "messages": session.messages,
+                    "tool_calls": session.tool_calls,
+                })
             if parsed.path == "/api/settings":
                 body = self._body()
                 settings = save_settings(body)
@@ -221,23 +231,6 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             send("error", {"error": str(exc)})
             self.close_connection = True
-
-    def _static(self, relative: str) -> None:
-        path = (STATIC_DIR / relative).resolve()
-        try:
-            path.relative_to(STATIC_DIR.resolve())
-        except ValueError:
-            return self._json({"error": "not found"}, status=404)
-        if not path.exists() or not path.is_file():
-            return self._json({"error": "not found"}, status=404)
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        data = path.read_bytes()
-        self.send_response(200)
-        self.send_header("content-type", content_type)
-        self.send_header("content-length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
 
 def main() -> None:
     ensure_dirs()
