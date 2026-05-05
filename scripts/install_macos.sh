@@ -12,6 +12,7 @@ NODE_VERSION="${SANKALP_NODE_VERSION:-24}"
 NVM_INSTALL_URL="${SANKALP_NVM_INSTALL_URL:-https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh}"
 SOURCE_DIR="${SANKALP_SOURCE_DIR:-}"
 USE_LOCAL_SOURCE=0
+DEFAULT_INSTALL_DIR="$HOME/.sankalp/app"
 
 say() {
   printf '%s\n' "$1"
@@ -69,8 +70,14 @@ install_or_update_repo() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     say "Updating Sankalp in $INSTALL_DIR"
     git -C "$INSTALL_DIR" fetch --prune origin
-    git -C "$INSTALL_DIR" checkout "$BRANCH"
-    git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
+    if [ "$INSTALL_DIR" = "$DEFAULT_INSTALL_DIR" ] || [ "${SANKALP_FORCE_UPDATE:-0}" = "1" ]; then
+      git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+      git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
+      git -C "$INSTALL_DIR" clean -fd
+    else
+      git -C "$INSTALL_DIR" checkout "$BRANCH"
+      git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
+    fi
   else
     if [ -e "$INSTALL_DIR" ]; then
       say "$INSTALL_DIR exists but is not a git checkout."

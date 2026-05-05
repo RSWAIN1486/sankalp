@@ -31,6 +31,7 @@ nvm install 24
 Sankalp can install like a local WebUI app: the installer clones or updates the repo under
 `~/.sankalp/app`, installs Node through `nvm` when needed, builds the SvelteKit WebUI,
 creates `~/Applications/Sankalp.app`, frees the configured local port, and opens the app.
+You can run the curl command from any directory.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_macos.sh | bash
@@ -55,6 +56,10 @@ By default the installer and app launcher free `SANKALP_PORT` before starting Sa
 When you run `bash scripts/install_macos.sh` from a local checkout, the installer copies that
 checkout into `~/.sankalp/app` so uncommitted local changes can be tested before publishing
 the curl installer.
+
+The default `~/.sankalp/app` checkout is managed application code. Curl installs reset that
+checkout to `origin/main` so upgrades can recover from partial or local test installs. User
+state, sessions, settings, and memory live outside that checkout under `~/.sankalp/`.
 
 ### Development Install
 

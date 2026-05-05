@@ -66,7 +66,9 @@ configured backend port, creates `~/Applications/Sankalp.app`, and opens it. The
 also frees the configured port before launching the Python backend when no healthy Sankalp
 server is already listening. When the installer is run from a local checkout instead of curl,
 it mirrors that working tree into `~/.sankalp/app` before building so local changes can be
-validated without first pushing to GitHub.
+validated without first pushing to GitHub. The default `~/.sankalp/app` checkout is treated
+as managed application code: curl updates reset it to `origin/main` so upgrades recover from
+dirty local test installs, while user state remains in sibling `~/.sankalp` data folders.
 
 The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
 collapsible left sidebar, the top bar only exposes settings, and detailed surfaces move into
