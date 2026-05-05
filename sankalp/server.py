@@ -11,17 +11,25 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from sankalp.agent import Agent
 from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
-from sankalp.macos import install_macos_app, macos_status, open_full_disk_access
+from sankalp.macos import (
+    install_macos_app,
+    macos_status,
+    obsidian_status,
+    open_full_disk_access,
+    open_obsidian_download,
+    request_vault_access,
+)
 from sankalp.memory import ObsidianMemory
 from sankalp.provider_models import codex_status, provider_models, start_codex_login
 from sankalp.sessions import SessionStore
-from sankalp.settings import discover_obsidian_vaults, load_settings, save_settings
+from sankalp.settings import discover_obsidian_vaults, ensure_obsidian_vault_setting, load_settings, save_settings
 from sankalp.tools import ToolRegistry
 from sankalp.updater import app_update_status, start_app_update
 
 
 def build_agent() -> Agent:
     ensure_dirs()
+    ensure_obsidian_vault_setting()
     settings = load_settings(include_secrets=True)
     vault = Path(str(settings.get("obsidian_vault_path") or VAULT_DIR)).expanduser()
     workspace = str(settings.get("obsidian_workspace_path") or "")
@@ -36,6 +44,7 @@ WEB_BUILD_DIR = ROOT / "web" / "build"
 
 
 def reload_memory_from_settings() -> None:
+    ensure_obsidian_vault_setting()
     settings = load_settings(include_secrets=True)
     vault = Path(str(settings.get("obsidian_vault_path") or VAULT_DIR)).expanduser()
     workspace = str(settings.get("obsidian_workspace_path") or "")
@@ -115,12 +124,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"vaults": discover_obsidian_vaults()})
             if parsed.path == "/api/macos/status":
                 return self._json({"macos": macos_status()})
+            if parsed.path == "/api/macos/obsidian-status":
+                return self._json({"obsidian": obsidian_status()})
             if parsed.path == "/api/app/update":
                 return self._json({"update": app_update_status()})
             if parsed.path == "/api/profile":
                 return self._json({"profile": AGENT.memory.read_profile()})
             if parsed.path == "/api/settings":
-                return self._json({"settings": load_settings()})
+                settings = ensure_obsidian_vault_setting()
+                return self._json({"settings": settings})
             if parsed.path == "/api/models":
                 query = parse_qs(parsed.query)
                 provider = (query.get("provider") or [""])[0]
@@ -193,6 +205,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"macos": install_macos_app()})
             if parsed.path == "/api/macos/open-full-disk-access":
                 return self._json({"macos": open_full_disk_access()})
+            if parsed.path == "/api/macos/open-obsidian-download":
+                return self._json({"obsidian": open_obsidian_download()})
+            if parsed.path == "/api/macos/request-vault-access":
+                body = self._body()
+                result = request_vault_access(str(body.get("default_path") or ""))
+                if result.get("ok"):
+                    settings = save_settings({"obsidian_vault_path": str(result["path"])})
+                    reload_memory_from_settings()
+                    return self._json({
+                        "vault_access": result,
+                        "settings": settings,
+                        "memory_status": AGENT.memory.status(),
+                    })
+                return self._json({"vault_access": result, "memory_status": AGENT.memory.status()})
             if parsed.path == "/api/app/update":
                 return self._json({"update": start_app_update()})
             if parsed.path == "/api/codex/login":

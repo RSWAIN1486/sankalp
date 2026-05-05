@@ -12,6 +12,7 @@ from sankalp.config import HOST, PORT, ROOT
 
 
 FULL_DISK_ACCESS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+OBSIDIAN_DOWNLOAD_URL = "https://obsidian.md/download"
 APP_PATH = Path("~/Applications/Sankalp.app").expanduser()
 BUNDLE_ID = "ai.yantrai.sankalp"
 
@@ -34,6 +35,57 @@ def open_full_disk_access() -> dict[str, Any]:
         return {"ok": False, "error": "Full Disk Access is macOS-specific."}
     subprocess.Popen(["open", FULL_DISK_ACCESS_URL])
     return {"ok": True, "url": FULL_DISK_ACCESS_URL}
+
+
+def obsidian_status() -> dict[str, Any]:
+    app_paths = [
+        Path("/Applications/Obsidian.app"),
+        Path("~/Applications/Obsidian.app").expanduser(),
+    ]
+    installed_path = next((path for path in app_paths if path.exists()), None)
+    return {
+        "installed": installed_path is not None,
+        "app_path": str(installed_path) if installed_path else "",
+        "download_url": OBSIDIAN_DOWNLOAD_URL,
+    }
+
+
+def open_obsidian_download() -> dict[str, Any]:
+    if not is_macos():
+        return {"ok": False, "error": "Obsidian install helper is macOS-specific."}
+    subprocess.Popen(["open", OBSIDIAN_DOWNLOAD_URL])
+    return {"ok": True, "url": OBSIDIAN_DOWNLOAD_URL}
+
+
+def request_vault_access(default_path: str = "") -> dict[str, Any]:
+    if not is_macos():
+        return {"ok": False, "error": "Vault access prompt is macOS-specific."}
+    if not shutil.which("osascript"):
+        return {"ok": False, "error": "osascript is required on macOS."}
+
+    default_folder = Path(default_path).expanduser() if default_path else Path.home() / "Documents"
+    if not default_folder.exists():
+        default_folder = Path.home()
+    if default_folder.is_file():
+        default_folder = default_folder.parent
+    default_folder = default_folder.resolve()
+
+    script = (
+        'set selectedFolder to choose folder with prompt '
+        '"Select your Obsidian vault folder to grant Sankalp access." '
+        f'default location POSIX file "{str(default_folder).replace(chr(34), chr(92) + chr(34))}"\n'
+        "return POSIX path of selectedFolder\n"
+    )
+    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout or "Vault selection was cancelled.").strip()
+        if "User canceled" in message:
+            return {"ok": False, "cancelled": True, "error": "Vault selection cancelled."}
+        return {"ok": False, "error": message}
+    selected = (result.stdout or "").strip()
+    if not selected:
+        return {"ok": False, "error": "No folder selected."}
+    return {"ok": True, "path": selected.rstrip("/")}
 
 
 def install_macos_app(app_path: Path = APP_PATH, repo_root: Path = ROOT) -> dict[str, Any]:

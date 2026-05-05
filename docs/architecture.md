@@ -74,6 +74,13 @@ as managed application code: curl updates clean tracked and untracked git change
 branch switching, then reset to `origin/main` so upgrades recover from dirty local test
 installs, while user state remains in sibling `~/.sankalp` data folders. For developer
 diagnostics, `SANKALP_PRESERVE_LOCAL_CHANGES=1` skips the managed-clean behavior.
+On macOS, installer onboarding checks whether Obsidian is installed and opens the official
+download page when it is missing. Optional vault permission prompting can be enabled during
+install with `SANKALP_OBSIDIAN_ONBOARD=prompt`, which asks the user to choose the vault
+folder and persists that path into local settings.
+When Obsidian is present, Sankalp auto-detects the best available vault from Obsidian's
+registry (open vault first, then other accessible vaults) and stores that path for memory
+sync. Users can still change the vault path manually in Settings at any time.
 
 App updates are release-manifest driven rather than commit-driven. `update.json` is the
 stable channel contract; bump its `version` and `sankalp.__version__` only for changes worth
@@ -92,6 +99,9 @@ settings drawer directly on the memory tab, where the UI can browse workspace ch
 preview notes recursively, and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
 not shown as a right sidebar; it appears as a collapsible Markdown-rendered block above the
 latest assistant message when the session has tool calls.
+On macOS, the Memory panel also exposes explicit helpers to request vault folder access via
+native folder picker, open Full Disk Access settings, and open the Obsidian download page
+when Obsidian is not installed.
 
 Message and session actions are handled in the WebUI against the existing backend contracts.
 Message copy uses the browser clipboard, edit/regenerate reuse `/api/chat/stream` with the

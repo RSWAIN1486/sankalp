@@ -14,6 +14,7 @@ SOURCE_DIR="${SANKALP_SOURCE_DIR:-}"
 USE_LOCAL_SOURCE=0
 DEFAULT_INSTALL_DIR="$HOME/.sankalp/app"
 PRESERVE_LOCAL_CHANGES="${SANKALP_PRESERVE_LOCAL_CHANGES:-0}"
+OBSIDIAN_ONBOARD="${SANKALP_OBSIDIAN_ONBOARD:-1}"
 
 say() {
   printf '%s\n' "$1"
@@ -174,6 +175,44 @@ install_app_bundle() {
   )
 }
 
+obsidian_onboarding() {
+  if [ "$OBSIDIAN_ONBOARD" = "0" ]; then
+    return
+  fi
+  say "Checking Obsidian setup"
+  (
+    cd "$INSTALL_DIR"
+    SANKALP_OBSIDIAN_ONBOARD="$OBSIDIAN_ONBOARD" python3 - <<'PY'
+import os
+from sankalp.macos import obsidian_status, open_obsidian_download, request_vault_access
+from sankalp.settings import auto_detect_obsidian_vault, load_settings, save_settings
+
+status = obsidian_status()
+if not status.get("installed"):
+    print("Obsidian is not installed. Opening download page.")
+    open_obsidian_download()
+    raise SystemExit(0)
+
+current_path = str(load_settings().get("obsidian_vault_path") or "").strip()
+detected_path = auto_detect_obsidian_vault(accessible_only=True)
+if detected_path and detected_path != current_path:
+    save_settings({"obsidian_vault_path": detected_path})
+    print(f"Auto-detected Obsidian vault: {detected_path}")
+
+if os.environ.get("SANKALP_OBSIDIAN_ONBOARD", "1") == "prompt":
+    default_path = str(load_settings().get("obsidian_vault_path") or "")
+    result = request_vault_access(default_path)
+    if result.get("ok") and result.get("path"):
+        save_settings({"obsidian_vault_path": str(result["path"])})
+        print(f"Configured Obsidian vault: {result['path']}")
+    elif result.get("cancelled"):
+        print("Obsidian vault selection cancelled.")
+    else:
+        print(f"Could not configure Obsidian vault: {result.get('error')}")
+PY
+  )
+}
+
 open_app() {
   if [ "${SANKALP_OPEN_AFTER_INSTALL:-1}" = "1" ]; then
     say "Opening Sankalp.app"
@@ -194,6 +233,7 @@ main() {
   build_webui
   free_port
   install_app_bundle
+  obsidian_onboarding
   open_app
 
   say "Sankalp is installed at $APP_PATH"

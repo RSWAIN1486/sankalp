@@ -66,6 +66,33 @@ def save_settings(update: dict[str, Any]) -> dict[str, Any]:
     return load_settings()
 
 
+def auto_detect_obsidian_vault(accessible_only: bool = True) -> str:
+    vaults = discover_obsidian_vaults()
+    if not vaults:
+        return ""
+    if accessible_only:
+        vaults = [vault for vault in vaults if bool(vault.get("accessible"))]
+        if not vaults:
+            return ""
+    return str(vaults[0].get("path") or "").strip()
+
+
+def ensure_obsidian_vault_setting() -> dict[str, Any]:
+    current = load_settings(include_secrets=True)
+    configured = str(current.get("obsidian_vault_path") or "").strip()
+    configured_ok = bool(configured and _can_list(Path(configured).expanduser()))
+    if configured_ok:
+        return load_settings()
+
+    detected = auto_detect_obsidian_vault(accessible_only=True)
+    if not detected:
+        return load_settings()
+    current["obsidian_vault_path"] = detected
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    return load_settings()
+
+
 def discover_obsidian_vaults() -> list[dict[str, Any]]:
     registry = Path("~/Library/Application Support/obsidian/obsidian.json").expanduser()
     if not registry.exists():

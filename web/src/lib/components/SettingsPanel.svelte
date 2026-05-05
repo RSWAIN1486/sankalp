@@ -15,6 +15,7 @@
   type NotesPreview = { folder?: string; notes: NotePreview[]; error?: string };
   type Vault = { path: string; open?: boolean; accessible?: boolean };
   type MemoryStatus = { accessible?: boolean; error?: string; vault?: string; workspace?: string };
+  type ObsidianStatus = { installed?: boolean; app_path?: string; download_url?: string };
 
   let settings: Settings = {};
   let profile: Profile = {};
@@ -29,9 +30,11 @@
   let codexStatus = "";
   let appStatus = "";
   let macosAvailable = false;
+  let obsidianState: ObsidianStatus = {};
   let localOpenAIKey = "";
   let geminiKey = "";
   let openaiKey = "";
+  $: needsVaultAccess = macosAvailable && !memoryStatus.accessible;
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "provider", label: "Provider" },
@@ -48,13 +51,14 @@
 
   async function loadAll() {
     status = "Loading...";
-    const [settingsData, profileData, foldersData, vaultData, macosData, codexData] = await Promise.all([
+    const [settingsData, profileData, foldersData, vaultData, macosData, codexData, obsidianData] = await Promise.all([
       api<{ settings: Settings }>("/api/settings"),
       api<{ profile: Profile }>("/api/profile"),
       api<{ folders: FolderOption[]; status: MemoryStatus }>("/api/memory/folders"),
       api<{ vaults: Vault[] }>("/api/obsidian/vaults"),
       api<{ macos: { is_macos?: boolean } }>("/api/macos/status"),
-      api<{ codex: { logged_in?: boolean; login_running?: boolean } }>("/api/codex/status")
+      api<{ codex: { logged_in?: boolean; login_running?: boolean } }>("/api/codex/status"),
+      api<{ obsidian: ObsidianStatus }>("/api/macos/obsidian-status")
     ]);
     settings = settingsData.settings || {};
     profile = profileData.profile || {};
@@ -62,6 +66,7 @@
     memoryStatus = foldersData.status || {};
     vaults = vaultData.vaults || [];
     macosAvailable = Boolean(macosData.macos?.is_macos);
+    obsidianState = obsidianData.obsidian || {};
     codexStatus = codexData.codex?.logged_in
       ? "Codex is logged in."
       : codexData.codex?.login_running
@@ -186,6 +191,34 @@
   async function openFullDiskAccess() {
     await api("/api/macos/open-full-disk-access", { method: "POST", body: "{}" });
   }
+
+  async function openObsidianDownload() {
+    await api("/api/macos/open-obsidian-download", { method: "POST", body: "{}" });
+  }
+
+  async function requestVaultAccess() {
+    status = "Requesting vault access...";
+    const data = await api<{ vault_access?: { ok?: boolean; cancelled?: boolean; error?: string }; settings?: Settings; memory_status?: MemoryStatus }>(
+      "/api/macos/request-vault-access",
+      {
+        method: "POST",
+        body: JSON.stringify({ default_path: settings.obsidian_vault_path || "" })
+      }
+    );
+    if (data.settings) {
+      settings = data.settings;
+      refreshSettings(settings);
+    }
+    if (data.memory_status) {
+      memoryStatus = data.memory_status;
+    }
+    await loadFolderChildren(settings.obsidian_workspace_path || "");
+    if (data.vault_access?.ok) {
+      status = "Vault access granted";
+      return;
+    }
+    status = data.vault_access?.cancelled ? "Vault selection cancelled" : data.vault_access?.error || "Could not request vault access.";
+  }
 </script>
 
 <aside class="settings-drawer">
@@ -258,10 +291,15 @@
           {/each}
         </select>
       </label>
+      {#if macosAvailable && !obsidianState.installed}
+        <p>Obsidian is not installed. Install it first, then pick your vault.</p>
+      {/if}
       <p>{memoryStatus.accessible ? "Accessible" : memoryStatus.error || "Memory status not checked."}</p>
       <div class="settings-actions">
         <button type="button" on:click={saveMemory}>Sync vault</button>
+        {#if needsVaultAccess}<button type="button" on:click={requestVaultAccess}>Grant vault access</button>{/if}
         <button type="button" on:click={() => viewNotes(settings.obsidian_workspace_path || "")}>View all notes</button>
+        {#if macosAvailable && !obsidianState.installed}<button type="button" on:click={openObsidianDownload}>Install Obsidian</button>{/if}
         {#if macosAvailable}<button type="button" on:click={openFullDiskAccess}>Full Disk Access</button>{/if}
       </div>
       <div class="memory-browser">
