@@ -70,8 +70,10 @@ also frees the configured port before launching the Python backend when no healt
 server is already listening. When the installer is run from a local checkout instead of curl,
 it mirrors that working tree into `~/.sankalp/app` before building so local changes can be
 validated without first pushing to GitHub. The default `~/.sankalp/app` checkout is treated
-as managed application code: curl updates reset it to `origin/main` so upgrades recover from
-dirty local test installs, while user state remains in sibling `~/.sankalp` data folders.
+as managed application code: curl updates clean tracked and untracked git changes before
+branch switching, then reset to `origin/main` so upgrades recover from dirty local test
+installs, while user state remains in sibling `~/.sankalp` data folders. For developer
+diagnostics, `SANKALP_PRESERVE_LOCAL_CHANGES=1` skips the managed-clean behavior.
 
 App updates are release-manifest driven rather than commit-driven. `update.json` is the
 stable channel contract; bump its `version` and `sankalp.__version__` only for changes worth

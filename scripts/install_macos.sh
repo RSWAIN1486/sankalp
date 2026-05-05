@@ -13,6 +13,7 @@ NVM_INSTALL_URL="${SANKALP_NVM_INSTALL_URL:-https://raw.githubusercontent.com/nv
 SOURCE_DIR="${SANKALP_SOURCE_DIR:-}"
 USE_LOCAL_SOURCE=0
 DEFAULT_INSTALL_DIR="$HOME/.sankalp/app"
+PRESERVE_LOCAL_CHANGES="${SANKALP_PRESERVE_LOCAL_CHANGES:-0}"
 
 say() {
   printf '%s\n' "$1"
@@ -71,9 +72,18 @@ install_or_update_repo() {
     say "Updating Sankalp in $INSTALL_DIR"
     git -C "$INSTALL_DIR" fetch --prune origin
     if [ "$INSTALL_DIR" = "$DEFAULT_INSTALL_DIR" ] || [ "${SANKALP_FORCE_UPDATE:-0}" = "1" ]; then
+      if [ "$PRESERVE_LOCAL_CHANGES" != "1" ]; then
+        # Managed installs should always recover from dirty local edits.
+        git -C "$INSTALL_DIR" reset --hard HEAD
+        git -C "$INSTALL_DIR" clean -fd
+      else
+        say "Preserving local changes in managed checkout because SANKALP_PRESERVE_LOCAL_CHANGES=1"
+      fi
       git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
-      git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
-      git -C "$INSTALL_DIR" clean -fd
+      if [ "$PRESERVE_LOCAL_CHANGES" != "1" ]; then
+        git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
+        git -C "$INSTALL_DIR" clean -fd
+      fi
     else
       git -C "$INSTALL_DIR" checkout "$BRANCH"
       git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
