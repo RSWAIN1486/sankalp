@@ -348,6 +348,37 @@ export async function checkAppUpdate(force = false): Promise<void> {
 export async function startAppUpdate(): Promise<void> {
   const data = await api<{ update: AppUpdateStatus }>("/api/app/update", { method: "POST", body: "{}" });
   chatState.update((state) => ({ ...state, appUpdate: data.update || state.appUpdate }));
+  if (data.update?.ok) {
+    void waitForBackendAndRefresh();
+  }
+}
+
+async function waitForBackendAndRefresh(): Promise<void> {
+  const start = Date.now();
+  const timeoutMs = 5 * 60 * 1000;
+  const initialDelayMs = 2000;
+  const retryDelayMs = 1500;
+
+  await delay(initialDelayMs);
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await fetch(`/api/health?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "cache-control": "no-store" }
+      });
+      if (response.ok) {
+        window.location.reload();
+        return;
+      }
+    } catch {
+      // Backend is expected to be unavailable while update restarts the app.
+    }
+    await delay(retryDelayMs);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function refreshSettings(settings: Settings): void {

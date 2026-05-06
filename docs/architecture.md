@@ -96,7 +96,9 @@ is newer, and keeps the detailed release notes plus the confirmed `Update and re
 action in Settings -> App. The update action starts the installer in the background, which
 dispatches to the platform installer in the background (macOS shell installer or Windows
 PowerShell installer). That installer resets managed app code to GitHub `main`, rebuilds the
-WebUI, refreshes launcher artifacts, and reopens Sankalp.
+WebUI, and refreshes launcher artifacts. For in-app updates, installer onboarding prompts are
+disabled and the running browser tab polls `/api/health` and reloads in place after the
+backend restarts, instead of opening a new tab/window.
 Release preparation is scripted in `scripts/release.sh`, which updates both `update.json`
 and `sankalp.__version__` together and can auto-generate release notes from git commit
 subjects since the previous release point.
