@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
+import platform
+import shlex
 import traceback
 import subprocess
 import threading
@@ -11,8 +14,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from sankalp.agent import Agent
-from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, VAULT_DIR, ensure_dirs
+from sankalp.config import HOST, PORT, ROOT, SESSION_DIR, STATE_DIR, VAULT_DIR, ensure_dirs
 from sankalp.macos import (
+    APP_PATH as MACOS_APP_PATH,
     install_macos_app,
     macos_status,
     obsidian_status,
@@ -255,7 +259,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"update": start_app_update()})
             if parsed.path == "/api/app/quit":
                 _schedule_shutdown()
-                return self._json({"ok": True, "message": "Sankalp is shutting down."})
+                return self._json({"ok": True, "message": "Sankalp is shutting down.", "close_tab": True})
+            if parsed.path == "/api/app/restart":
+                if not _schedule_restart():
+                    return self._json({"ok": False, "error": "Restart is supported from the installed macOS or Windows app."}, status=400)
+                return self._json({"ok": True, "message": "Sankalp is restarting.", "close_tab": True})
             if parsed.path == "/api/codex/login":
                 return self._json({"codex": start_codex_login()})
             if parsed.path == "/api/memory/open":
@@ -354,3 +362,31 @@ def _schedule_shutdown() -> None:
         HTTPD.server_close()
 
     threading.Thread(target=_shutdown, daemon=True).start()
+
+
+def _schedule_restart() -> bool:
+    if not _schedule_relaunch():
+        return False
+    _schedule_shutdown()
+    return True
+
+
+def _schedule_relaunch() -> bool:
+    system = platform.system()
+    if system == "Darwin":
+        app_path = Path(os.environ.get("SANKALP_APP_PATH", str(MACOS_APP_PATH))).expanduser()
+        command = f"sleep 1; /usr/bin/open {shlex.quote(str(app_path))}"
+        subprocess.Popen(["/bin/sh", "-c", command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+    if system == "Windows":
+        launcher = STATE_DIR / "bin" / "sankalp.cmd"
+        launcher_arg = str(launcher).replace("'", "''")
+        command = f"Start-Sleep -Milliseconds 1000; Start-Process -FilePath '{launcher_arg}'"
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-Command", command],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+        )
+        return True
+    return False

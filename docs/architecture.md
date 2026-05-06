@@ -152,7 +152,7 @@ The WebUI navigation follows a minimal chat-tool model: primary navigation stays
 collapsible left sidebar, the top bar exposes settings and update availability, and detailed
 surfaces move into a settings drawer. The drawer carries provider setup, Obsidian memory
 configuration, user profile, and explicit app update controls (check update, update/relaunch,
-and quit local app). The Memory nav item opens the
+restart, and quit local app). The Memory nav item opens the
 settings drawer directly on the memory tab, where the UI can browse workspace children,
 preview notes recursively, and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
 not shown as a right sidebar; it appears as a collapsible Markdown-rendered block above the
@@ -166,7 +166,9 @@ Message copy uses the browser clipboard, edit/regenerate reuse `/api/chat/stream
 backend `edit_index` path, and branch deletion persists through `/api/session/truncate`,
 which removes the selected message and all later messages from the JSON session. Conversation
 rename/delete call the existing session APIs, while export is a browser-side Markdown
-download built from `/api/session`. The conversation row menu (Edit/Export/Delete) is
+download built from `/api/session`. The App tab exposes Quit and Restart controls: Quit
+stops the loopback server and asks the browser tab to close, while Restart queues the
+installed app launcher before shutting down the current backend. The conversation row menu (Edit/Export/Delete) is
 rendered as a viewport-fixed anchored popover rather than inside the scroll container so
 opening actions never mutates sidebar scrollbars or list layout.
 

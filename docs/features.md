@@ -108,3 +108,4 @@ from safe read/search tools before normal chat.
 - Optional vault-picker prompt is supported during install with
   `SANKALP_OBSIDIAN_ONBOARD=prompt`.
 - In-app update action now dispatches to the platform installer (macOS or Windows).
+- App controls include Restart and Quit; Quit shuts down the local server and asks the browser tab to close.

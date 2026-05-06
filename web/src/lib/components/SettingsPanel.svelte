@@ -195,11 +195,33 @@
   async function quitApp() {
     appStatus = "Quitting Sankalp...";
     try {
-      const data = await api<{ ok?: boolean; message?: string }>("/api/app/quit", { method: "POST", body: "{}" });
-      appStatus = data.message || "Sankalp is shutting down. You can close this tab.";
+      const data = await api<{ ok?: boolean; message?: string; close_tab?: boolean }>("/api/app/quit", { method: "POST", body: "{}" });
+      appStatus = data.message || "Sankalp is shutting down.";
+      if (data.close_tab) closePage();
     } catch {
       appStatus = "Could not quit Sankalp from this tab.";
     }
+  }
+
+  async function restartApp() {
+    appStatus = "Restarting Sankalp...";
+    try {
+      const data = await api<{ ok?: boolean; message?: string; error?: string; close_tab?: boolean }>("/api/app/restart", { method: "POST", body: "{}" });
+      appStatus = data.ok ? data.message || "Sankalp is restarting." : data.error || "Could not restart Sankalp.";
+      if (data.close_tab) closePage();
+    } catch {
+      appStatus = "Could not restart Sankalp from this tab.";
+    }
+  }
+
+  function closePage() {
+    setTimeout(() => {
+      window.open("", "_self");
+      window.close();
+      setTimeout(() => {
+        window.location.replace("about:blank");
+      }, 250);
+    }, 150);
   }
 
   async function openFullDiskAccess() {
@@ -462,7 +484,8 @@
       <p>Updates are checked from the stable GitHub manifest and installed only after confirmation.</p>
       <div class="settings-actions">
         <button type="button" on:click={checkUpdates}>Check for updates</button>
-        <button type="button" on:click={quitApp}>Quit Sankalp</button>
+        <button type="button" on:click={restartApp}>Restart</button>
+        <button type="button" on:click={quitApp}>Quit</button>
       </div>
       {#if appStatus}<p>{appStatus}</p>{/if}
     </section>
