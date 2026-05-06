@@ -150,7 +150,13 @@ from sankalp.settings import auto_detect_obsidian_vault, load_settings, save_set
 download_url = "https://obsidian.md/download"
 obsidian_registry = Path.home() / "AppData" / "Roaming" / "obsidian" / "obsidian.json"
 if not obsidian_registry.exists():
-    subprocess.Popen(["cmd", "/c", "start", "", download_url], shell=False)
+    try:
+        os.startfile(download_url)  # type: ignore[attr-defined]
+    except Exception:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-Command", "Start-Process", download_url],
+            shell=False,
+        )
     print("Obsidian is not installed. Opened download page.")
     raise SystemExit(0)
 

@@ -106,7 +106,8 @@ subjects since the previous release point.
 The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
 collapsible left sidebar, the top bar exposes settings and update availability, and detailed
 surfaces move into a settings drawer. The drawer carries provider setup, Obsidian memory
-configuration, user profile, and explicit app update controls. The Memory nav item opens the
+configuration, user profile, and explicit app update controls (check update, update/relaunch,
+and quit local app). The Memory nav item opens the
 settings drawer directly on the memory tab, where the UI can browse workspace children,
 preview notes recursively, and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
 not shown as a right sidebar; it appears as a collapsible Markdown-rendered block above the

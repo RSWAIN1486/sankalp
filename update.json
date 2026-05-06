@@ -1,9 +1,9 @@
 {
-  "version": "0.1.3",
+  "version": "0.1.4",
   "channel": "stable",
-  "title": "In-app update UX polish",
+  "title": "Fix Windows Obsidian setup quoting error",
   "notes": [
-    "Maintenance and quality improvements"
+    "Addressed path quoting issues for Obsidian vault setup on Windows"
   ],
   "minimum_supported_version": "0.1.0"
 }

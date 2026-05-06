@@ -188,6 +188,16 @@
     appStatus = $chatState.appUpdate?.message || "Update started";
   }
 
+  async function quitApp() {
+    appStatus = "Quitting Sankalp...";
+    try {
+      const data = await api<{ ok?: boolean; message?: string }>("/api/app/quit", { method: "POST", body: "{}" });
+      appStatus = data.message || "Sankalp is shutting down. You can close this tab.";
+    } catch {
+      appStatus = "Could not quit Sankalp from this tab.";
+    }
+  }
+
   async function openFullDiskAccess() {
     await api("/api/macos/open-full-disk-access", { method: "POST", body: "{}" });
   }
@@ -411,6 +421,7 @@
       <p>Updates are checked from the stable GitHub manifest and installed only after confirmation.</p>
       <div class="settings-actions">
         <button type="button" on:click={checkUpdates}>Check for updates</button>
+        <button type="button" on:click={quitApp}>Quit Sankalp</button>
       </div>
       {#if appStatus}<p>{appStatus}</p>{/if}
     </section>

@@ -4,6 +4,7 @@ import json
 import mimetypes
 import traceback
 import subprocess
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -41,6 +42,7 @@ def build_agent() -> Agent:
 
 AGENT = build_agent()
 WEB_BUILD_DIR = ROOT / "web" / "build"
+HTTPD: ThreadingHTTPServer | None = None
 
 
 def reload_memory_from_settings() -> None:
@@ -221,6 +223,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"vault_access": result, "memory_status": AGENT.memory.status()})
             if parsed.path == "/api/app/update":
                 return self._json({"update": start_app_update()})
+            if parsed.path == "/api/app/quit":
+                _schedule_shutdown()
+                return self._json({"ok": True, "message": "Sankalp is shutting down."})
             if parsed.path == "/api/codex/login":
                 return self._json({"codex": start_codex_login()})
             if parsed.path == "/api/memory/open":
@@ -299,8 +304,23 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
 
 def main() -> None:
+    global HTTPD
     ensure_dirs()
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
+    HTTPD = httpd
     print(f"Sankalp listening on http://{HOST}:{PORT}", flush=True)
     print(f"Obsidian memory vault: {VAULT_DIR}", flush=True)
     httpd.serve_forever()
+
+
+def _schedule_shutdown() -> None:
+    if HTTPD is None:
+        return
+
+    def _shutdown() -> None:
+        # Reply is sent before shutdown starts, then stop accepting new requests.
+        time.sleep(0.2)
+        HTTPD.shutdown()
+        HTTPD.server_close()
+
+    threading.Thread(target=_shutdown, daemon=True).start()
