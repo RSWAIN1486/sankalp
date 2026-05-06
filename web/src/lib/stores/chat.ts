@@ -355,9 +355,10 @@ export async function startAppUpdate(): Promise<void> {
 
 async function waitForBackendAndRefresh(): Promise<void> {
   const start = Date.now();
-  const timeoutMs = 5 * 60 * 1000;
+  const timeoutMs = 8 * 60 * 1000;
   const initialDelayMs = 2000;
   const retryDelayMs = 1500;
+  let sawBackendRestart = false;
 
   await delay(initialDelayMs);
   while (Date.now() - start < timeoutMs) {
@@ -366,12 +367,12 @@ async function waitForBackendAndRefresh(): Promise<void> {
         cache: "no-store",
         headers: { "cache-control": "no-store" }
       });
-      if (response.ok) {
+      if (response.ok && sawBackendRestart) {
         window.location.reload();
         return;
       }
     } catch {
-      // Backend is expected to be unavailable while update restarts the app.
+      sawBackendRestart = true;
     }
     await delay(retryDelayMs);
   }

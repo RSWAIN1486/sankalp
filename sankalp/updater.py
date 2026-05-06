@@ -76,9 +76,9 @@ def start_app_update() -> dict[str, Any]:
         "SANKALP_BRANCH": env.get("SANKALP_BRANCH", "main"),
         "SANKALP_HOST": env.get("SANKALP_HOST", HOST),
         "SANKALP_PORT": env.get("SANKALP_PORT", str(PORT)),
-        # In-app updates should not open a new browser tab/window. The existing tab will
-        # reconnect and refresh once the backend is back up.
-        "SANKALP_OPEN_AFTER_INSTALL": "0",
+        # In-app updates should behave like a reinstall: rebuild, replace launchers,
+        # restart the app, and let the existing tab reconnect to the fresh backend.
+        "SANKALP_OPEN_AFTER_INSTALL": "1",
         # Permission onboarding is for first-time install flow; updates should not prompt again.
         "SANKALP_OBSIDIAN_ONBOARD": "0",
     })
@@ -86,7 +86,7 @@ def start_app_update() -> dict[str, Any]:
     threading.Thread(target=_run_update, args=(script, env, system), daemon=True).start()
     return {
         "ok": True,
-        "message": "Update started. Sankalp will rebuild, reinstall, and refresh this tab when ready.",
+        "message": "Update started. Sankalp will rebuild, reinstall, relaunch, and refresh this tab when ready.",
         "repo_root": str(ROOT),
     }
 
