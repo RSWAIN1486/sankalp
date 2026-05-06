@@ -14,6 +14,10 @@ macOS.
   - open download page if not installed;
   - auto-detect accessible vault from Obsidian registry;
   - optional folder picker prompt.
+- Post-install launcher self-test:
+  - validates generated `sankalp-launcher.ps1` syntax;
+  - verifies `sankalp.cmd` exists;
+  - verifies `py` or `python` is available in PATH.
 
 ## Direct Install Command
 

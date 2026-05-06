@@ -256,9 +256,6 @@ button {
 }
 
 .session-menu {
-  position: absolute;
-  top: 36px;
-  right: 0;
   z-index: 10;
   width: 210px;
   border: 1px solid var(--line);
@@ -266,6 +263,13 @@ button {
   background: #151516;
   padding: 8px;
   box-shadow: var(--shadow);
+}
+
+.session-menu.floating {
+  position: fixed;
+  top: var(--menu-top);
+  left: var(--menu-left);
+  z-index: 120;
 }
 
 .session-menu button {

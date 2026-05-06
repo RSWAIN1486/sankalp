@@ -97,6 +97,9 @@ action in Settings -> App. The update action starts the installer in the backgro
 dispatches to the platform installer in the background (macOS shell installer or Windows
 PowerShell installer). That installer resets managed app code to GitHub `main`, rebuilds the
 WebUI, refreshes launcher artifacts, and reopens Sankalp.
+Release preparation is scripted in `scripts/release.sh`, which updates both `update.json`
+and `sankalp.__version__` together and can auto-generate release notes from git commit
+subjects since the previous release point.
 
 The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
 collapsible left sidebar, the top bar exposes settings and update availability, and detailed
@@ -115,7 +118,9 @@ Message copy uses the browser clipboard, edit/regenerate reuse `/api/chat/stream
 backend `edit_index` path, and branch deletion persists through `/api/session/truncate`,
 which removes the selected message and all later messages from the JSON session. Conversation
 rename/delete call the existing session APIs, while export is a browser-side Markdown
-download built from `/api/session`.
+download built from `/api/session`. The conversation row menu (Edit/Export/Delete) is
+rendered as a viewport-fixed anchored popover rather than inside the scroll container so
+opening actions never mutates sidebar scrollbars or list layout.
 
 ## Flow
 

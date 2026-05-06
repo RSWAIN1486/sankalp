@@ -1,11 +1,11 @@
 {
-  "version": "0.1.1",
+  "version": "0.1.2",
   "channel": "stable",
-  "title": "Local app installer and updater",
+  "title": "Sidebar menu overflow fix",
   "notes": [
-    "One-command macOS app installation",
-    "Built WebUI served from the local Python backend",
-    "Cleaner app launcher and managed checkout updates"
+    "Conversation menu no longer causes sidebar scrollbar",
+    "Popover now viewport-anchored",
+    "Improved menu close behavior"
   ],
   "minimum_supported_version": "0.1.0"
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { Database, Download, MessageSquarePlus, MoreHorizontal, PanelRight, Pencil, Search, Trash2 } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import {
@@ -16,22 +17,74 @@
 
   let searchOpen = false;
   let menuSessionId: string | null = null;
+  let menuTop = 0;
+  let menuLeft = 0;
+
+  $: activeMenuSession = menuSessionId ? $visibleSessions.find((session) => session.session_id === menuSessionId) ?? null : null;
+
+  function closeMenu() {
+    menuSessionId = null;
+  }
+
+  function toggleMenu(sessionId: string, trigger: HTMLButtonElement) {
+    if (menuSessionId === sessionId) {
+      closeMenu();
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 210;
+    const viewportPadding = 10;
+    menuTop = rect.bottom + 6;
+    menuLeft = Math.max(viewportPadding, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding));
+    menuSessionId = sessionId;
+  }
+
+  function handleGlobalPointerDown(event: PointerEvent) {
+    if (!menuSessionId) return;
+    const target = event.target as Element | null;
+    if (!target) return;
+    if (target.closest(".session-menu") || target.closest(".session-menu-button")) return;
+    closeMenu();
+  }
+
+  function handleGlobalEscape(event: KeyboardEvent) {
+    if (event.key === "Escape") closeMenu();
+  }
+
+  function handleViewportChange() {
+    if (menuSessionId) closeMenu();
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pointerdown", handleGlobalPointerDown);
+    window.addEventListener("keydown", handleGlobalEscape);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+  }
+
+  onDestroy(() => {
+    if (typeof window === "undefined") return;
+    window.removeEventListener("pointerdown", handleGlobalPointerDown);
+    window.removeEventListener("keydown", handleGlobalEscape);
+    window.removeEventListener("resize", handleViewportChange);
+    window.removeEventListener("scroll", handleViewportChange, true);
+  });
 
   async function rename(session: SessionSummary) {
-    menuSessionId = null;
+    closeMenu();
     const title = window.prompt("Rename conversation", session.title);
     if (!title) return;
     await renameSession(session.session_id, title);
   }
 
   async function remove(session: SessionSummary) {
-    menuSessionId = null;
+    closeMenu();
     if (!window.confirm(`Delete "${session.title}"?`)) return;
     await deleteSession(session.session_id);
   }
 
   async function exportSession(session: SessionSummary) {
-    menuSessionId = null;
+    closeMenu();
     const data = await api<{ session: SessionSummary; messages: ChatMessage[]; tool_calls: ToolCall[] }>(
       `/api/session?id=${encodeURIComponent(session.session_id)}`
     );
@@ -109,21 +162,22 @@
             type="button"
             title="Conversation menu"
             aria-label={`Conversation menu for ${session.title}`}
-            on:click={() => (menuSessionId = menuSessionId === session.session_id ? null : session.session_id)}
+            on:click={(event) => toggleMenu(session.session_id, event.currentTarget as HTMLButtonElement)}
           >
             <MoreHorizontal size={18} />
           </button>
-          {#if menuSessionId === session.session_id}
-            <div class="session-menu">
-              <button type="button" on:click={() => rename(session)}><Pencil size={18} /> Edit</button>
-              <button type="button" on:click={() => exportSession(session)}><Download size={18} /> Export</button>
-              <button class="danger" type="button" on:click={() => remove(session)}><Trash2 size={18} /> Delete</button>
-            </div>
-          {/if}
         </div>
       {:else}
         <div class="empty-state">No conversations found.</div>
       {/each}
     </div>
+
+    {#if activeMenuSession}
+      <div class="session-menu floating" style={`--menu-top:${menuTop}px; --menu-left:${menuLeft}px;`}>
+        <button type="button" on:click={() => rename(activeMenuSession)}><Pencil size={18} /> Edit</button>
+        <button type="button" on:click={() => exportSession(activeMenuSession)}><Download size={18} /> Export</button>
+        <button class="danger" type="button" on:click={() => remove(activeMenuSession)}><Trash2 size={18} /> Delete</button>
+      </div>
+    {/if}
   {/if}
 </aside>

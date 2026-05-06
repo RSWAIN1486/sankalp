@@ -84,27 +84,38 @@ function New-Launcher {
   New-Item -Path (Join-Path $RootDir "bin") -ItemType Directory -Force | Out-Null
   $launcherPath = Join-Path $RootDir "bin\sankalp-launcher.ps1"
   $cmdPath = Join-Path $RootDir "bin\sankalp.cmd"
-  $logDir = Join-Path $StateDir ""
   $launcher = @"
 `$ErrorActionPreference = "SilentlyContinue"
 `$hostValue = "$HostValue"
 `$portValue = "$PortValue"
 `$repoDir = "$InstallDir"
 `$stateDir = "$StateDir"
-`$url = "http://`$hostValue:`$portValue"
+`$url = "http://{0}:{1}" -f `$hostValue, `$portValue
 New-Item -Path `$stateDir -ItemType Directory -Force | Out-Null
-if (Test-NetConnection -ComputerName `$hostValue -Port ([int]`$portValue) -WarningAction SilentlyContinue).TcpTestSucceeded {
+`$tcpReady = `$false
+try {
+  `$tcpReady = (Test-NetConnection -ComputerName `$hostValue -Port ([int]`$portValue) -WarningAction SilentlyContinue).TcpTestSucceeded
+} catch {}
+if (`$tcpReady) {
   Start-Process `$url
   exit 0
 }
 `$pythonExe = Join-Path `$repoDir ".venv\Scripts\python.exe"
 if (-not (Test-Path `$pythonExe)) {
-  `$pythonExe = "python"
+  if (Get-Command py -ErrorAction SilentlyContinue) {
+    `$pythonExe = "py"
+    `$pythonArgs = @("-3", "server.py")
+  } else {
+    `$pythonExe = "python"
+    `$pythonArgs = @("server.py")
+  }
+} else {
+  `$pythonArgs = @("server.py")
 }
 `$env:SANKALP_HOST = `$hostValue
 `$env:SANKALP_PORT = `$portValue
-`$env:SANKALP_STATE_DIR = "$StateDir"
-Start-Process -FilePath `$pythonExe -ArgumentList "server.py" -WorkingDirectory `$repoDir -WindowStyle Hidden
+`$env:SANKALP_STATE_DIR = `$stateDir
+Start-Process -FilePath `$pythonExe -ArgumentList `$pythonArgs -WorkingDirectory `$repoDir -WindowStyle Hidden
 Start-Sleep -Milliseconds 900
 Start-Process `$url
 "@
@@ -177,6 +188,28 @@ function Open-App {
   & (Join-Path $RootDir "bin\sankalp.cmd")
 }
 
+function Test-Launcher {
+  $launcherPath = Join-Path $RootDir "bin\sankalp-launcher.ps1"
+  if (-not (Test-Path $launcherPath)) {
+    throw "Launcher self-test failed: launcher script not found at $launcherPath"
+  }
+
+  $parseErrors = $null
+  [void][System.Management.Automation.Language.Parser]::ParseFile($launcherPath, [ref]$null, [ref]$parseErrors)
+  if ($parseErrors -and $parseErrors.Count -gt 0) {
+    $first = $parseErrors[0]
+    throw "Launcher self-test failed: PowerShell parse error at line $($first.Extent.StartLineNumber), col $($first.Extent.StartColumnNumber): $($first.Message)"
+  }
+
+  $cmdPath = Join-Path $RootDir "bin\sankalp.cmd"
+  if (-not (Test-Path $cmdPath)) {
+    throw "Launcher self-test failed: command shim not found at $cmdPath"
+  }
+  if (-not (Get-Command py -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "Launcher self-test failed: neither 'py' nor 'python' is available in PATH."
+  }
+}
+
 Require-Tool -Name "git" -InstallHint "Install Git for Windows."
 Require-Tool -Name "python" -InstallHint "Install Python 3.9+."
 Require-Tool -Name "npm" -InstallHint "Install Node.js 20+."
@@ -185,6 +218,7 @@ Ensure-ManagedRepo
 Ensure-Node
 Build-WebUi
 New-Launcher
+Test-Launcher
 Ensure-ObsidianSetup
 Open-App
 
