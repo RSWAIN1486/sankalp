@@ -56,6 +56,9 @@ Current frontend layers:
   filtering.
 - `web/src/lib/services/api.ts`: typed JSON fetch helper and SSE parser.
 - `web/src/lib/storage/db.ts`: Dexie database for local UI cache and preferences.
+- `web/scripts/check-node-version.mjs`: runtime guard invoked by npm pre-scripts so local
+  development/build commands fail fast with actionable guidance when Node does not satisfy
+  the Vite/Svelte plugin requirement (`20.19+` or `22.12+`).
 
 The design choice is to keep the current backend stable while replacing the UI foundation.
 This avoids a combined frontend/backend rewrite and lets the professional shell prove the

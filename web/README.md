@@ -24,6 +24,14 @@ npm install
 npm run dev -- --port 5173
 ```
 
+If `npm run dev` says Vite requires a newer Node version, your shell is not using the
+`web/.nvmrc` runtime yet. Run:
+
+```sh
+source ~/.nvm/nvm.sh
+nvm use
+```
+
 The Vite dev server proxies `/api/*` to `http://127.0.0.1:8765`.
 Open `http://127.0.0.1:5173`.
 
