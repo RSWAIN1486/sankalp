@@ -20,6 +20,16 @@ class UpdaterTests(unittest.TestCase):
         self.assertTrue(status["update_available"])
         self.assertEqual(status["latest_version"], "9.0.0")
 
+    def test_update_status_uses_installed_code_version_not_local_manifest(self):
+        with patch("sankalp.updater._local_manifest", return_value={"version": "9.9.9"}), patch(
+            "sankalp.updater.fetch_update_manifest",
+            return_value={"version": "0.1.5", "title": "Release"},
+        ):
+            status = app_update_status()
+        self.assertEqual(status["current_version"], "0.1.5")
+        self.assertEqual(status["installed_manifest_version"], "9.9.9")
+        self.assertFalse(status["update_available"])
+
     def test_update_status_handles_manifest_failure(self):
         with patch("sankalp.updater.fetch_update_manifest", side_effect=RuntimeError("offline")):
             status = app_update_status()

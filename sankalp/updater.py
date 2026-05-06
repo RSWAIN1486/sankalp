@@ -22,9 +22,12 @@ DEFAULT_REPO_URL = "https://github.com/RSWAIN1486/sankalp.git"
 
 def app_update_status(force: bool = False) -> dict[str, Any]:
     local = _local_manifest()
+    installed_version = __version__
+    installed_manifest_version = str(local.get("version") or "")
     status: dict[str, Any] = {
         "ok": True,
-        "current_version": str(local.get("version") or __version__),
+        "current_version": installed_version,
+        "installed_manifest_version": installed_manifest_version,
         "current_commit": _git(["rev-parse", "--short", "HEAD"]),
         "repo_root": str(ROOT),
         "manifest_url": os.environ.get("SANKALP_UPDATE_URL", DEFAULT_UPDATE_URL),
@@ -42,7 +45,7 @@ def app_update_status(force: bool = False) -> dict[str, Any]:
     status.update({
         "latest": remote,
         "latest_version": latest_version,
-        "update_available": _is_newer_version(latest_version, status["current_version"]),
+        "update_available": _is_newer_version(latest_version, installed_version),
     })
     if force:
         status["forced"] = True
