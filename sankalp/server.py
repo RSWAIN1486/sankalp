@@ -47,14 +47,6 @@ WEB_BUILD_DIR = ROOT / "web" / "build"
 HTTPD: ThreadingHTTPServer | None = None
 
 
-FEATURES = [
-    {"id": "chat", "label": "Chat Sessions", "description": "Persistent local conversations with edit/resend and branching."},
-    {"id": "streaming", "label": "Streaming Responses", "description": "SSE chat stream with status and progressive answer updates."},
-    {"id": "providers", "label": "Multi-Provider Routing", "description": "Switch providers/models per message across local, Codex, Gemini, and OpenAI."},
-    {"id": "memory", "label": "Obsidian Memory", "description": "Search, browse, and open local Obsidian notes with auditable memory actions."},
-    {"id": "tool-audit", "label": "Tool Activity Trace", "description": "Every tool call is captured in session activity with status and payloads."},
-]
-
 TOOLS = [
     {"name": "memory_remember", "description": "Append memory facts into Obsidian inbox notes."},
     {"name": "memory_search", "description": "Search the configured Obsidian vault (excluding session transcripts)."},
@@ -75,7 +67,6 @@ COMMANDS = [
 
 def capabilities_payload() -> dict[str, object]:
     return {
-        "features": FEATURES,
         "skills": SkillRegistry().capabilities(),
         "tools": TOOLS,
         "commands": COMMANDS,

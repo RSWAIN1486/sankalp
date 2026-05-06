@@ -115,14 +115,7 @@ export type CapabilityCommand = {
 };
 
 export type Capabilities = {
-  features: CapabilityFeature[];
   skills: CapabilitySkill[];
   tools: CapabilityTool[];
   commands: CapabilityCommand[];
-};
-
-export type CapabilityFeature = {
-  id: string;
-  label: string;
-  description: string;
 };

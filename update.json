@@ -1,11 +1,9 @@
 {
-  "version": "0.1.6",
+  "version": "0.1.7",
   "channel": "stable",
-  "title": "Agent home and skills foundation",
+  "title": "Removed features from capabilities",
   "notes": [
-    "Formalized ~/.sankalp as the Sankalp agent home",
-    "Added folder-backed skill registry with bundled Obsidian skill",
-    "Updated macOS and Windows installers to migrate legacy installs into ~/.sankalp and launch the WebUI"
+    "Maintenance and quality improvements"
   ],
   "minimum_supported_version": "0.1.0"
 }

@@ -34,7 +34,7 @@
   let localOpenAIKey = "";
   let geminiKey = "";
   let openaiKey = "";
-  let capabilities: Capabilities = { features: [], skills: [], tools: [], commands: [] };
+  let capabilities: Capabilities = { skills: [], tools: [], commands: [] };
   $: needsVaultAccess = macosAvailable && !memoryStatus.accessible;
 
   const tabs: Array<{ id: Tab; label: string }> = [
@@ -405,16 +405,6 @@
           </article>
         {:else}
           <p>No installed skills found.</p>
-        {/each}
-      </div>
-
-      <div class="capability-group">
-        <h3>Features</h3>
-        {#each capabilities.features as feature}
-          <article class="capability-item">
-            <strong>{feature.label}</strong>
-            <span>{feature.description}</span>
-          </article>
         {/each}
       </div>
 

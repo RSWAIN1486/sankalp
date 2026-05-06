@@ -9,19 +9,23 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/release.sh [patch|minor|major|X.Y.Z] [options]
+  scripts/release.sh --version X.Y.Z [options]
 
 # Do release bump + manifest update
 scripts/release.sh patch --title "Sidebar menu overflow fix"
+scripts/release.sh patch --title "Sidebar menu overflow fix" --version 0.1.7
+scripts/release.sh --version 0.1.7 --title "Sidebar menu overflow fix"
 
 # Manual notes override
 scripts/release.sh patch --title "Sidebar menu overflow fix" \
   --notes "Conversation menu no longer causes sidebar scrollbar;Popover now viewport-anchored;Improved menu close behavior"
-  
+  --version 0.1.7
 Options:
   --title "Release title"          Set manifest title explicitly.
   --notes "note1;note2;note3"      Set release notes explicitly (semicolon-separated).
   --notes-file path.txt            Set release notes from file (one note per line).
   --channel stable                 Manifest channel (default: existing value or stable).
+  --version X.Y.Z                  Explicit next version (overrides bump mode/positional version).
   --min-supported X.Y.Z            minimum_supported_version override.
   --max-notes N                    Max auto-generated notes (default: 8).
   --dry-run                        Show planned changes without writing files.
@@ -177,6 +181,7 @@ main() {
   local notes_inline=""
   local notes_file=""
   local channel=""
+  local explicit_version=""
   local min_supported=""
   local dry_run="0"
   local max_notes="8"
@@ -187,6 +192,7 @@ main() {
       --notes) notes_inline="${2:-}"; shift 2 ;;
       --notes-file) notes_file="${2:-}"; shift 2 ;;
       --channel) channel="${2:-}"; shift 2 ;;
+      --version) explicit_version="${2:-}"; shift 2 ;;
       --min-supported) min_supported="${2:-}"; shift 2 ;;
       --max-notes) max_notes="${2:-}"; shift 2 ;;
       --dry-run) dry_run="1"; shift ;;
@@ -202,7 +208,11 @@ main() {
     exit 1
   fi
   local next
-  next="$(bump_version "$current" "$bump_mode")"
+  if [ -n "$explicit_version" ]; then
+    next="$(bump_version "$current" "$explicit_version")"
+  else
+    next="$(bump_version "$current" "$bump_mode")"
+  fi
 
   if [ -z "$channel" ]; then
     channel="$(python3 - <<'PY'
