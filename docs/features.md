@@ -84,3 +84,15 @@ from safe read/search tools before normal chat.
 - Opens the Full Disk Access settings pane.
 - Checks a stable GitHub update manifest, shows update availability in the main UI, and
   installs updates only after user confirmation.
+
+## Windows App
+
+- One-command PowerShell installer clones or updates Sankalp under
+  `%LOCALAPPDATA%\Sankalp\app`, builds the WebUI, creates a Start Menu shortcut, and opens
+  Sankalp.
+- Managed app checkout reset semantics match macOS for safe reinstall/update.
+- Obsidian onboarding checks install status and opens the official download page when needed.
+- Obsidian vault path is auto-detected from Obsidian registry when accessible.
+- Optional vault-picker prompt is supported during install with
+  `SANKALP_OBSIDIAN_ONBOARD=prompt`.
+- In-app update action now dispatches to the platform installer (macOS or Windows).

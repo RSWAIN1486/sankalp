@@ -33,6 +33,19 @@ class UpdaterTests(unittest.TestCase):
 
         self.assertFalse(result["ok"])
 
+    def test_start_update_rejects_unsupported_platform(self):
+        with patch("sankalp.updater.platform.system", return_value="Linux"):
+            result = start_app_update()
+        self.assertFalse(result["ok"])
+        self.assertIn("not yet supported", result["error"])
+
+    def test_start_update_uses_windows_installer(self):
+        fake_root = Path("/private/tmp/sankalp-update-test")
+        with patch("sankalp.updater.platform.system", return_value="Windows"), patch("sankalp.updater.ROOT", fake_root):
+            result = start_app_update()
+        self.assertFalse(result["ok"])
+        self.assertIn("install_windows.ps1", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

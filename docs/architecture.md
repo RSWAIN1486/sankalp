@@ -81,6 +81,12 @@ folder and persists that path into local settings.
 When Obsidian is present, Sankalp auto-detects the best available vault from Obsidian's
 registry (open vault first, then other accessible vaults) and stores that path for memory
 sync. Users can still change the vault path manually in Settings at any time.
+Windows now follows the same managed-install contract through
+`scripts/install_windows.ps1`: installs into `%LOCALAPPDATA%\Sankalp\app`, treats that
+checkout as resettable managed app code on updates, keeps runtime state in
+`%USERPROFILE%\.sankalp`, and creates a local launcher/Start Menu shortcut. The Windows
+installer mirrors Obsidian onboarding by checking install status, opening the official
+download page if missing, and auto-detecting accessible vault paths from Obsidian metadata.
 
 App updates are release-manifest driven rather than commit-driven. `update.json` is the
 stable channel contract; bump its `version` and `sankalp.__version__` only for changes worth
@@ -88,8 +94,9 @@ surfacing to installed users. The WebUI checks `/api/app/update` at startup usin
 browser cache, shows a small header signal and dismissible banner when the remote manifest
 is newer, and keeps the detailed release notes plus the confirmed `Update and relaunch`
 action in Settings -> App. The update action starts the installer in the background, which
-resets the managed app checkout to GitHub `main`, rebuilds the WebUI, reinstalls
-`Sankalp.app`, and reopens it.
+dispatches to the platform installer in the background (macOS shell installer or Windows
+PowerShell installer). That installer resets managed app code to GitHub `main`, rebuilds the
+WebUI, refreshes launcher artifacts, and reopens Sankalp.
 
 The WebUI navigation follows a minimal chat-tool model: primary navigation stays in the
 collapsible left sidebar, the top bar exposes settings and update availability, and detailed

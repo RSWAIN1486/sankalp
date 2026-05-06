@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -56,7 +57,13 @@ def fetch_update_manifest() -> dict[str, Any]:
 
 
 def start_app_update() -> dict[str, Any]:
-    script = ROOT / "scripts" / "install_macos.sh"
+    system = platform.system()
+    if system == "Darwin":
+        script = ROOT / "scripts" / "install_macos.sh"
+    elif system == "Windows":
+        script = ROOT / "scripts" / "install_windows.ps1"
+    else:
+        return {"ok": False, "error": f"In-app updates are not yet supported on {system}."}
     if not script.exists():
         return {"ok": False, "error": f"Installer script not found at {script}"}
 
@@ -69,7 +76,7 @@ def start_app_update() -> dict[str, Any]:
         "SANKALP_OPEN_AFTER_INSTALL": "1",
     })
 
-    threading.Thread(target=_run_update, args=(script, env), daemon=True).start()
+    threading.Thread(target=_run_update, args=(script, env, system), daemon=True).start()
     return {
         "ok": True,
         "message": "Update started. Sankalp will rebuild, reinstall, and reopen when ready.",
@@ -77,19 +84,37 @@ def start_app_update() -> dict[str, Any]:
     }
 
 
-def _run_update(script: Path, env: dict[str, str]) -> None:
+def _run_update(script: Path, env: dict[str, str], system: str) -> None:
     time.sleep(0.5)
-    tmp_dir = Path(tempfile.mkdtemp(prefix="sankalp-update-"))
-    runnable = tmp_dir / "install_macos.sh"
-    shutil.copy2(script, runnable)
-    subprocess.Popen(
-        ["/bin/bash", str(runnable)],
-        cwd=str(ROOT),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    if system == "Darwin":
+        tmp_dir = Path(tempfile.mkdtemp(prefix="sankalp-update-"))
+        runnable = tmp_dir / "install_macos.sh"
+        shutil.copy2(script, runnable)
+        subprocess.Popen(
+            ["/bin/bash", str(runnable)],
+            cwd=str(ROOT),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return
+    if system == "Windows":
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            cwd=str(ROOT),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+        )
 
 
 def _local_manifest() -> dict[str, Any]:

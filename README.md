@@ -13,7 +13,7 @@ The Python backend is API-only. Use the SvelteKit WebUI for the browser interfac
 
 ## Requirements
 
-- macOS or Linux
+- macOS, Windows, or Linux
 - Python 3.9+
 - Node.js 24 via `nvm` for the WebUI
 
@@ -64,6 +64,34 @@ state, sessions, settings, and memory live outside that checkout under `~/.sanka
 Installed users are notified through the in-app updater only when `update.json` advertises a
 new stable version. Bump `update.json` and `sankalp/__init__.py` together for releases worth
 surfacing in the UI.
+
+### One-command Windows Install
+
+On Windows, Sankalp supports a per-user managed install under `%LOCALAPPDATA%\Sankalp\app`.
+The installer clones or updates the repo, builds the WebUI, creates a Start Menu shortcut,
+and opens Sankalp in the browser.
+
+Run in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_windows.ps1 | iex
+```
+
+Useful overrides:
+
+```powershell
+$env:SANKALP_PORT = "8766"
+$env:SANKALP_OBSIDIAN_ONBOARD = "prompt"
+irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_windows.ps1 | iex
+```
+
+Windows installer behavior matches managed macOS installs:
+
+- `%LOCALAPPDATA%\Sankalp\app` is managed application code.
+- Reinstall/update resets managed checkout to `origin/main`.
+- User data remains in `%USERPROFILE%\.sankalp`.
+- Obsidian is checked during install; if missing, download page opens automatically.
+- When Obsidian is installed, Sankalp auto-detects the best accessible vault path.
 
 ### Development Install
 
