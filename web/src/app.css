@@ -882,14 +882,20 @@ button {
 }
 
 .capability-item strong,
-.capability-item span {
+.capability-item span,
+.capability-item small {
   display: block;
 }
 
-.capability-item span {
+.capability-item span,
+.capability-item small {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.capability-item small {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .trait-list article,

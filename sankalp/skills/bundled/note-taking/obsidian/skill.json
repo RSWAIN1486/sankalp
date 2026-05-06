@@ -1,0 +1,14 @@
+{
+  "id": "note-taking.obsidian",
+  "name": "Obsidian",
+  "description": "Use the local Obsidian vault as human-readable long-term memory.",
+  "version": "0.1.0",
+  "category": "note-taking",
+  "triggers": ["obsidian", "vault", "memory", "notes"],
+  "commands": ["/remember"],
+  "requires": {
+    "folders": ["obsidian-vault"],
+    "tools": ["memory_remember", "memory_search"]
+  },
+  "entrypoint": "SKILL.md"
+}

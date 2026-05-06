@@ -65,7 +65,7 @@ The first milestone is complete when the assistant can:
 
 - Start locally with no build step.
 - Persist sessions.
-- Capture `remember:` facts into Obsidian Markdown.
+- Capture `/remember` facts into Obsidian Markdown.
 - Retrieve memory snippets before answering.
 - Show tool activity in the UI.
 - Run tests for memory and tool safety.

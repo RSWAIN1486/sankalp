@@ -5,9 +5,10 @@ macOS.
 
 ## Goals
 
-- Per-user install under `%LOCALAPPDATA%\Sankalp` (no admin required by default).
-- Managed app checkout in `%LOCALAPPDATA%\Sankalp\app`.
+- Per-user install under `%USERPROFILE%\.sankalp` (no admin required by default).
+- Managed app checkout in `%USERPROFILE%\.sankalp\app`.
 - Safe reinstall/update that resets managed code while preserving user state.
+- Legacy install migration from `%LOCALAPPDATA%\Sankalp\app` and `%USERPROFILE%\sankalp`.
 - Local-first runtime with browser WebUI at `http://127.0.0.1:8765`.
 - Obsidian onboarding:
   - detect if Obsidian is installed;
@@ -37,11 +38,11 @@ irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_wi
 
 ## Managed Update Semantics
 
-- `%LOCALAPPDATA%\Sankalp\app` is managed application code.
+- `%USERPROFILE%\.sankalp\app` is managed application code.
 - Reinstall/update runs `git fetch` and resets checkout to `origin/main`.
 - Dirty tracked/untracked files in managed checkout are cleaned unless
   `SANKALP_PRESERVE_LOCAL_CHANGES=1`.
-- User state remains outside the checkout in `%USERPROFILE%\.sankalp`.
+- User state remains outside the checkout in sibling `%USERPROFILE%\.sankalp` folders.
 
 ## Build a Windows EXE Installer
 

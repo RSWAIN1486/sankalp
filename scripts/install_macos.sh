@@ -4,7 +4,8 @@ set -eu
 DEFAULT_REPO_URL="https://github.com/RSWAIN1486/sankalp.git"
 REPO_URL="${SANKALP_REPO_URL:-$DEFAULT_REPO_URL}"
 BRANCH="${SANKALP_BRANCH:-main}"
-INSTALL_DIR="${SANKALP_INSTALL_DIR:-$HOME/.sankalp/app}"
+AGENT_HOME="${SANKALP_AGENT_HOME:-${SANKALP_STATE_DIR:-$HOME/.sankalp}}"
+INSTALL_DIR="${SANKALP_INSTALL_DIR:-$AGENT_HOME/app}"
 APP_PATH="${SANKALP_APP_PATH:-$HOME/Applications/Sankalp.app}"
 SANKALP_HOST="${SANKALP_HOST:-127.0.0.1}"
 SANKALP_PORT="${SANKALP_PORT:-8765}"
@@ -12,7 +13,7 @@ NODE_VERSION="${SANKALP_NODE_VERSION:-24}"
 NVM_INSTALL_URL="${SANKALP_NVM_INSTALL_URL:-https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh}"
 SOURCE_DIR="${SANKALP_SOURCE_DIR:-}"
 USE_LOCAL_SOURCE=0
-DEFAULT_INSTALL_DIR="$HOME/.sankalp/app"
+DEFAULT_INSTALL_DIR="$AGENT_HOME/app"
 PRESERVE_LOCAL_CHANGES="${SANKALP_PRESERVE_LOCAL_CHANGES:-0}"
 OBSIDIAN_ONBOARD="${SANKALP_OBSIDIAN_ONBOARD:-1}"
 
@@ -51,6 +52,39 @@ detect_local_source() {
       fi
       ;;
   esac
+}
+
+is_repo_checkout() {
+  [ -d "$1/.git" ] && [ -d "$1/sankalp" ] && [ -d "$1/web" ]
+}
+
+migrate_legacy_home() {
+  legacy_home="$HOME/sankalp"
+  if [ ! -e "$legacy_home" ]; then
+    return
+  fi
+  if [ "$USE_LOCAL_SOURCE" = "1" ] && [ "$(cd "$legacy_home" 2>/dev/null && pwd || true)" = "$SOURCE_DIR" ]; then
+    say "Keeping local source checkout at $legacy_home"
+    return
+  fi
+
+  mkdir -p "$AGENT_HOME"
+  if is_repo_checkout "$legacy_home" && [ ! -e "$INSTALL_DIR" ]; then
+    say "Migrating legacy Sankalp checkout from $legacy_home to $INSTALL_DIR"
+    mv "$legacy_home" "$INSTALL_DIR"
+    return
+  fi
+
+  if [ ! -e "$AGENT_HOME" ] || [ -z "$(find "$AGENT_HOME" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)" ]; then
+    say "Migrating legacy Sankalp home from $legacy_home to $AGENT_HOME"
+    rmdir "$AGENT_HOME" 2>/dev/null || true
+    mv "$legacy_home" "$AGENT_HOME"
+    return
+  fi
+
+  backup="$AGENT_HOME/legacy-sankalp-$(date +%Y%m%d%H%M%S)"
+  say "Moving legacy Sankalp folder to $backup"
+  mv "$legacy_home" "$backup"
 }
 
 install_or_update_repo() {
@@ -228,6 +262,7 @@ main() {
   need_tool bash
 
   detect_local_source
+  migrate_legacy_home
   install_or_update_repo
   ensure_node
   build_webui
@@ -238,7 +273,7 @@ main() {
 
   say "Sankalp is installed at $APP_PATH"
   say "WebUI: http://$SANKALP_HOST:$SANKALP_PORT"
-  say "Logs: $HOME/.sankalp/Sankalp.app.log"
+  say "Logs: $AGENT_HOME/logs/Sankalp.app.log"
 }
 
 main "$@"

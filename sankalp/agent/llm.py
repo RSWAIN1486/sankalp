@@ -8,7 +8,7 @@ import tempfile
 import urllib.request
 from typing import Any
 
-from sankalp.config import MODEL, ROOT
+from sankalp.config import MODEL, ROOT, SOUL_FILE
 from sankalp.sessions.store import title_from_query
 from sankalp.settings import load_settings
 
@@ -284,9 +284,22 @@ class LLMAdapter:
             "When it would genuinely help you understand the user better, ask one subtle "
             "profile question, but keep it natural and infrequent."
         )
+        soul = self._soul_prompt()
+        if soul:
+            prompt += "\n\nAgent persona:\n" + soul
         if memory_context:
             prompt += "\n\nRelevant memory:\n" + memory_context
         return prompt
+
+    def _soul_prompt(self) -> str:
+        try:
+            text = SOUL_FILE.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+        text = re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()
+        if text == "# Sankalp Agent Persona":
+            return ""
+        return text[:4000]
 
     def _openai(
         self,
@@ -570,5 +583,5 @@ class LLMAdapter:
             )
         return (
             "I am running in local fallback mode because `OPENAI_API_KEY` is not set. "
-            "I can still save memories and run explicit tools like `remember:`, `/fetch`, `/read`, and `/append`."
+            "I can still save memories and run explicit tools like `/remember`, `/fetch`, `/read`, and `/append`."
         )

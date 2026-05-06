@@ -9,7 +9,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#RepoUrl}
-DefaultDirName={localappdata}\Sankalp
+DefaultDirName={%USERPROFILE}\.sankalp\installer
 DefaultGroupName={#AppName}
 DisableDirPage=yes
 DisableProgramGroupPage=yes
@@ -20,7 +20,7 @@ SolidCompression=yes
 PrivilegesRequired=lowest
 WizardStyle=modern
 ChangesEnvironment=yes
-UninstallDisplayIcon={app}\bin\sankalp.cmd
+UninstallDisplayIcon={%USERPROFILE}\.sankalp\bin\sankalp.cmd
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
@@ -31,8 +31,8 @@ Source: "..\..\scripts\install_windows.ps1"; DestDir: "{app}\scripts"; Flags: ig
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_windows.ps1"""; Flags: runhidden waituntilterminated
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{localappdata}\Sankalp\bin\sankalp.cmd"
-Name: "{autodesktop}\{#AppName}"; Filename: "{localappdata}\Sankalp\bin\sankalp.cmd"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}"; Filename: "{%USERPROFILE}\.sankalp\bin\sankalp.cmd"
+Name: "{autodesktop}\{#AppName}"; Filename: "{%USERPROFILE}\.sankalp\bin\sankalp.cmd"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"

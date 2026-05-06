@@ -24,12 +24,14 @@ from sankalp.memory import ObsidianMemory
 from sankalp.provider_models import codex_status, provider_models, start_codex_login
 from sankalp.sessions import SessionStore
 from sankalp.settings import discover_obsidian_vaults, ensure_obsidian_vault_setting, load_settings, save_settings
+from sankalp.skills import SkillRegistry, seed_builtin_skills
 from sankalp.tools import ToolRegistry
 from sankalp.updater import app_update_status, start_app_update
 
 
 def build_agent() -> Agent:
     ensure_dirs()
+    seed_builtin_skills()
     ensure_obsidian_vault_setting()
     settings = load_settings(include_secrets=True)
     vault = Path(str(settings.get("obsidian_vault_path") or VAULT_DIR)).expanduser()
@@ -43,30 +45,41 @@ def build_agent() -> Agent:
 AGENT = build_agent()
 WEB_BUILD_DIR = ROOT / "web" / "build"
 HTTPD: ThreadingHTTPServer | None = None
-CAPABILITIES = {
-    "skills": [
-        {"id": "chat", "label": "Chat Sessions", "description": "Persistent local conversations with edit/resend and branching."},
-        {"id": "streaming", "label": "Streaming Responses", "description": "SSE chat stream with status and progressive answer updates."},
-        {"id": "providers", "label": "Multi-Provider Routing", "description": "Switch providers/models per message across local, Codex, Gemini, and OpenAI."},
-        {"id": "memory", "label": "Obsidian Memory", "description": "Search, browse, and open local Obsidian notes with auditable memory actions."},
-        {"id": "tool-audit", "label": "Tool Activity Trace", "description": "Every tool call is captured in session activity with status and payloads."},
-    ],
-    "tools": [
-        {"name": "memory_remember", "description": "Append memory facts into Obsidian inbox notes."},
-        {"name": "memory_search", "description": "Search the configured Obsidian vault (excluding session transcripts)."},
-        {"name": "browser_fetch", "description": "Fetch and extract readable text from a URL."},
-        {"name": "file_read", "description": "Read local files inside allowed roots."},
-        {"name": "file_append", "description": "Append text to local files inside allowed roots."},
-        {"name": "terminal", "description": "Run terminal commands when explicitly enabled by settings/env."},
-    ],
-    "commands": [
-        {"command": "/remember <fact>", "description": "Save a durable fact to memory inbox."},
-        {"command": "/fetch <url>", "description": "Fetch and summarize a webpage or text URL."},
-        {"command": "/read <path>", "description": "Read a local file from allowed roots."},
-        {"command": "/append <path> :: <text>", "description": "Append text into a local file."},
-        {"command": "/sh <command>", "description": "Run a terminal command when terminal access is enabled."},
-    ],
-}
+
+
+FEATURES = [
+    {"id": "chat", "label": "Chat Sessions", "description": "Persistent local conversations with edit/resend and branching."},
+    {"id": "streaming", "label": "Streaming Responses", "description": "SSE chat stream with status and progressive answer updates."},
+    {"id": "providers", "label": "Multi-Provider Routing", "description": "Switch providers/models per message across local, Codex, Gemini, and OpenAI."},
+    {"id": "memory", "label": "Obsidian Memory", "description": "Search, browse, and open local Obsidian notes with auditable memory actions."},
+    {"id": "tool-audit", "label": "Tool Activity Trace", "description": "Every tool call is captured in session activity with status and payloads."},
+]
+
+TOOLS = [
+    {"name": "memory_remember", "description": "Append memory facts into Obsidian inbox notes."},
+    {"name": "memory_search", "description": "Search the configured Obsidian vault (excluding session transcripts)."},
+    {"name": "browser_fetch", "description": "Fetch and extract readable text from a URL."},
+    {"name": "file_read", "description": "Read local files inside allowed roots."},
+    {"name": "file_append", "description": "Append text to local files inside allowed roots."},
+    {"name": "terminal", "description": "Run terminal commands when explicitly enabled by settings/env."},
+]
+
+COMMANDS = [
+    {"command": "/remember <fact>", "description": "Save a durable fact to memory inbox."},
+    {"command": "/fetch <url>", "description": "Fetch and summarize a webpage or text URL."},
+    {"command": "/read <path>", "description": "Read a local file from allowed roots."},
+    {"command": "/append <path> :: <text>", "description": "Append text into a local file."},
+    {"command": "/sh <command>", "description": "Run a terminal command when terminal access is enabled."},
+]
+
+
+def capabilities_payload() -> dict[str, object]:
+    return {
+        "features": FEATURES,
+        "skills": SkillRegistry().capabilities(),
+        "tools": TOOLS,
+        "commands": COMMANDS,
+    }
 
 
 def reload_memory_from_settings() -> None:
@@ -123,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/health":
                 return self._json({"ok": True})
             if parsed.path == "/api/capabilities":
-                return self._json({"capabilities": CAPABILITIES})
+                return self._json({"capabilities": capabilities_payload()})
             if parsed.path == "/api/sessions":
                 return self._json({"sessions": AGENT.sessions.list()})
             if parsed.path == "/api/session":

@@ -60,6 +60,8 @@ the curl installer.
 The default `~/.sankalp/app` checkout is managed application code. Curl installs reset that
 checkout to `origin/main` so upgrades can recover from partial or local test installs. User
 state, sessions, settings, and memory live outside that checkout under `~/.sankalp/`.
+Reinstall also migrates an older `~/sankalp` checkout/home into the `~/.sankalp` agent-home
+layout when it can do so without touching the local source checkout running the installer.
 
 Installed users are notified through the in-app updater only when `update.json` advertises a
 new stable version. Bump `update.json` and `sankalp/__init__.py` together for releases worth
@@ -67,7 +69,7 @@ surfacing in the UI.
 
 ### One-command Windows Install
 
-On Windows, Sankalp supports a per-user managed install under `%LOCALAPPDATA%\Sankalp\app`.
+On Windows, Sankalp supports a per-user managed install under `%USERPROFILE%\.sankalp\app`.
 The installer clones or updates the repo, builds the WebUI, creates a Start Menu shortcut,
 and opens Sankalp in the browser.
 
@@ -87,9 +89,11 @@ irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_wi
 
 Windows installer behavior matches managed macOS installs:
 
-- `%LOCALAPPDATA%\Sankalp\app` is managed application code.
+- `%USERPROFILE%\.sankalp\app` is managed application code.
 - Reinstall/update resets managed checkout to `origin/main`.
-- User data remains in `%USERPROFILE%\.sankalp`.
+- User data remains in sibling folders under `%USERPROFILE%\.sankalp`.
+- Reinstall migrates older `%LOCALAPPDATA%\Sankalp\app` and `%USERPROFILE%\sankalp`
+  installs into `%USERPROFILE%\.sankalp` when possible.
 - Obsidian is checked during install; if missing, download page opens automatically.
 - When Obsidian is installed, Sankalp auto-detects the best accessible vault path.
 
@@ -226,10 +230,24 @@ Runtime state:
 ~/.sankalp/
 ```
 
-Sessions:
+Agent home layout:
 
 ```text
-~/.sankalp/sessions/
+~/.sankalp/
+  app/
+  settings.json
+  SOUL.md
+  state.db
+  sessions/
+  skills/
+  hooks/
+  logs/
+  cache/
+  sandboxes/
+  memories/
+  obsidian-vault/
+  webui/
+  tools/
 ```
 
 Default memory vault:

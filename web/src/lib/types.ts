@@ -93,8 +93,15 @@ export type StreamEvent =
 
 export type CapabilitySkill = {
   id: string;
-  label: string;
+  name: string;
   description: string;
+  path: string;
+  entrypoint: string;
+  category?: string;
+  version?: string;
+  commands?: string[];
+  triggers?: string[];
+  requires?: Record<string, unknown>;
 };
 
 export type CapabilityTool = {
@@ -108,7 +115,14 @@ export type CapabilityCommand = {
 };
 
 export type Capabilities = {
+  features: CapabilityFeature[];
   skills: CapabilitySkill[];
   tools: CapabilityTool[];
   commands: CapabilityCommand[];
+};
+
+export type CapabilityFeature = {
+  id: string;
+  label: string;
+  description: string;
 };

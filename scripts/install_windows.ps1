@@ -4,16 +4,17 @@ $ErrorActionPreference = "Stop"
 $DefaultRepoUrl = "https://github.com/RSWAIN1486/sankalp.git"
 $RepoUrl = if ($env:SANKALP_REPO_URL) { $env:SANKALP_REPO_URL } else { $DefaultRepoUrl }
 $Branch = if ($env:SANKALP_BRANCH) { $env:SANKALP_BRANCH } else { "main" }
-$RootDir = Join-Path $env:LOCALAPPDATA "Sankalp"
-$InstallDir = if ($env:SANKALP_INSTALL_DIR) { $env:SANKALP_INSTALL_DIR } else { Join-Path $RootDir "app" }
-$StateDir = if ($env:SANKALP_STATE_DIR) { $env:SANKALP_STATE_DIR } else { Join-Path $env:USERPROFILE ".sankalp" }
+$AgentHome = if ($env:SANKALP_AGENT_HOME) { $env:SANKALP_AGENT_HOME } elseif ($env:SANKALP_STATE_DIR) { $env:SANKALP_STATE_DIR } else { Join-Path $env:USERPROFILE ".sankalp" }
+$RootDir = $AgentHome
+$StateDir = $AgentHome
+$InstallDir = if ($env:SANKALP_INSTALL_DIR) { $env:SANKALP_INSTALL_DIR } else { Join-Path $AgentHome "app" }
 $HostValue = if ($env:SANKALP_HOST) { $env:SANKALP_HOST } else { "127.0.0.1" }
 $PortValue = if ($env:SANKALP_PORT) { $env:SANKALP_PORT } else { "8765" }
 $NodeMajorRequired = 20
 $PreserveLocalChanges = if ($env:SANKALP_PRESERVE_LOCAL_CHANGES) { $env:SANKALP_PRESERVE_LOCAL_CHANGES } else { "0" }
 $OpenAfterInstall = if ($env:SANKALP_OPEN_AFTER_INSTALL) { $env:SANKALP_OPEN_AFTER_INSTALL } else { "1" }
 $ObsidianOnboard = if ($env:SANKALP_OBSIDIAN_ONBOARD) { $env:SANKALP_OBSIDIAN_ONBOARD } else { "1" }
-$DefaultInstallDir = Join-Path (Join-Path $env:LOCALAPPDATA "Sankalp") "app"
+$DefaultInstallDir = Join-Path $AgentHome "app"
 
 function Write-Info {
   param([string]$Message)
@@ -24,6 +25,58 @@ function Require-Tool {
   param([string]$Name, [string]$InstallHint)
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     throw "Missing required tool: $Name. $InstallHint"
+  }
+}
+
+function Test-RepoCheckout {
+  param([string]$Path)
+  return (
+    (Test-Path (Join-Path $Path ".git")) -and
+    (Test-Path (Join-Path $Path "sankalp")) -and
+    (Test-Path (Join-Path $Path "web"))
+  )
+}
+
+function Move-LegacyPath {
+  param([string]$LegacyPath)
+  if (-not (Test-Path $LegacyPath)) {
+    return
+  }
+  if ($LegacyPath -eq $AgentHome) {
+    return
+  }
+
+  New-Item -Path $AgentHome -ItemType Directory -Force | Out-Null
+  if ((Test-RepoCheckout -Path $LegacyPath) -and -not (Test-Path $InstallDir)) {
+    Write-Info "Migrating legacy Sankalp checkout from $LegacyPath to $InstallDir"
+    Move-Item -Path $LegacyPath -Destination $InstallDir
+    return
+  }
+
+  $stamp = Get-Date -Format "yyyyMMddHHmmss"
+  $backup = Join-Path $AgentHome "legacy-sankalp-$stamp"
+  Write-Info "Moving legacy Sankalp folder to $backup"
+  Move-Item -Path $LegacyPath -Destination $backup
+}
+
+function Migrate-LegacyHome {
+  $legacyProfileHome = Join-Path $env:USERPROFILE "sankalp"
+  if ((Test-Path $legacyProfileHome) -and -not (Test-Path $AgentHome) -and -not (Test-RepoCheckout -Path $legacyProfileHome)) {
+    Write-Info "Migrating legacy Sankalp home from $legacyProfileHome to $AgentHome"
+    Move-Item -Path $legacyProfileHome -Destination $AgentHome
+  } else {
+    Move-LegacyPath -LegacyPath $legacyProfileHome
+  }
+
+  $legacyLocalRoot = Join-Path $env:LOCALAPPDATA "Sankalp"
+  $legacyLocalApp = Join-Path $legacyLocalRoot "app"
+  if ((Test-Path $legacyLocalApp) -and -not (Test-Path $InstallDir)) {
+    New-Item -Path $AgentHome -ItemType Directory -Force | Out-Null
+    Write-Info "Migrating legacy installed app from $legacyLocalApp to $InstallDir"
+    Move-Item -Path $legacyLocalApp -Destination $InstallDir
+  }
+  if ((Test-Path $legacyLocalRoot) -and -not (Get-ChildItem -Path $legacyLocalRoot -Force -ErrorAction SilentlyContinue)) {
+    Remove-Item -Path $legacyLocalRoot -Force
   }
 }
 
@@ -220,6 +273,7 @@ Require-Tool -Name "git" -InstallHint "Install Git for Windows."
 Require-Tool -Name "python" -InstallHint "Install Python 3.9+."
 Require-Tool -Name "npm" -InstallHint "Install Node.js 20+."
 
+Migrate-LegacyHome
 Ensure-ManagedRepo
 Ensure-Node
 Build-WebUi

@@ -22,6 +22,8 @@ existing `/api/*` routes.
   Obsidian open helpers.
 - `sankalp/tools/registry.py`: small explicit tools with structured logged results,
   including auditable Obsidian search.
+- `sankalp/skills/registry.py`: scans `~/.sankalp/skills` for folder-backed skills with
+  `skill.json` manifests and `SKILL.md` entrypoints.
 - `sankalp/updater.py`: explicit app update checks against the stable GitHub manifest and
   confirmed installer launches.
 - `web/`: SvelteKit/TypeScript frontend that follows the llama.cpp WebUI direction:
@@ -67,6 +69,39 @@ The design choice is to keep the current backend stable while replacing the UI f
 This avoids a combined frontend/backend rewrite and lets the professional shell prove the
 data contracts before SQLite and typed backend routes are introduced.
 
+## Agent Home
+
+`~/.sankalp` is Sankalp's local agent home. Managed application code lives under
+`~/.sankalp/app`; user-owned data lives in sibling folders and must survive reinstall,
+update, and managed checkout resets.
+
+```text
+~/.sankalp/
+  app/              # managed app checkout
+  settings.json     # local settings and provider config
+  SOUL.md           # editable persona file loaded into LLM prompts
+  state.db          # future SQLite operational state
+  sessions/         # JSON session state today
+  skills/           # installed folder-backed skills
+  hooks/            # future user/system hooks
+  logs/             # launcher/backend logs
+  cache/            # runtime caches
+  sandboxes/        # future isolated tool workspaces
+  memories/         # future memory indexes
+  obsidian-vault/   # human-readable Markdown memory
+  webui/            # browser/UI runtime cache
+  tools/            # future user-installed tool adapters
+```
+
+Each skill is a folder with `skill.json`, `DESCRIPTION.md`, `SKILL.md`, and optional
+`setup.md`, `scripts/`, `examples/`, or `assets/`. Startup seeds bundled default skills
+into `~/.sankalp/skills` only when the target skill folder does not already exist, so user
+edits are not overwritten.
+
+`SOUL.md` is also user-owned. `LLMAdapter` reads it fresh while building the developer
+prompt, strips the default comment-only template, and appends non-empty persona text to the
+normal Sankalp system behavior.
+
 Installed app mode uses a single loopback origin. The WebUI is built into `web/build`, and
 `sankalp/server.py` serves that static bundle with SPA fallback while keeping `/api/*`
 reserved for JSON and SSE routes. The curl installer at `scripts/install_macos.sh` clones or
@@ -88,11 +123,15 @@ When Obsidian is present, Sankalp auto-detects the best available vault from Obs
 registry (open vault first, then other accessible vaults) and stores that path for memory
 sync. Users can still change the vault path manually in Settings at any time.
 Windows now follows the same managed-install contract through
-`scripts/install_windows.ps1`: installs into `%LOCALAPPDATA%\Sankalp\app`, treats that
-checkout as resettable managed app code on updates, keeps runtime state in
-`%USERPROFILE%\.sankalp`, and creates a local launcher/Start Menu shortcut. The Windows
+`scripts/install_windows.ps1`: installs into `%USERPROFILE%\.sankalp\app`, treats that
+checkout as resettable managed app code on updates, keeps runtime state in sibling folders
+under `%USERPROFILE%\.sankalp`, and creates a local launcher/Start Menu shortcut. The Windows
 installer mirrors Obsidian onboarding by checking install status, opening the official
 download page if missing, and auto-detecting accessible vault paths from Obsidian metadata.
+Both installers migrate legacy `sankalp` app/home folders into the `~/.sankalp` agent-home
+layout before building. On Windows the managed app checkout now also defaults to
+`%USERPROFILE%\.sankalp\app`; older `%LOCALAPPDATA%\Sankalp\app` installs are moved into
+that location when possible.
 
 App updates are release-manifest driven rather than commit-driven. `update.json` is the
 stable channel contract; bump its `version` and `sankalp.__version__` only for changes worth
@@ -168,7 +207,7 @@ Inbox/YYYY-MM-DD.md
 Decisions/
 ```
 
-Writes are append-first. `remember:` captures go to `Inbox/`; chat turns go to `Sessions/`;
+Writes are append-first. `/remember` captures go to `Inbox/`; chat turns go to `Sessions/`;
 profile edits and inferred traits go to `People/you.md`. Deleting a chat session removes
 the JSON session and matching `Sessions/YYYY-MM-DD-<session-id>.md` Obsidian transcript.
 Retrieval is lightweight keyword scoring for now.
@@ -198,10 +237,11 @@ tool, the configured LLM may choose from a small safe-read catalog: `memory_sear
 `browser_fetch`, or `file_read`. Write and terminal tools remain explicit commands because
 LLM selection is useful for wording flexibility, not for hidden side effects.
 
-Capability discovery is now explicit in the WebUI. The backend exposes `/api/capabilities`
-for a typed list of skills, tools, and slash commands. `Settings -> Capabilities` renders
-that list, while the composer shows inline slash-command suggestions when a draft begins
-with `/`, with keyboard selection and click-to-insert for fast command usage.
+Capability discovery is explicit in the WebUI. The backend exposes `/api/capabilities`
+for a typed list of features, folder-backed skills, tools, and slash commands.
+`Settings -> Capabilities` renders that list, while the composer shows inline slash-command
+suggestions when a draft begins with `/`, with keyboard selection and click-to-insert for
+fast command usage.
 
 ## Providers
 

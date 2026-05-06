@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 
 from sankalp.agent import Agent
+import sankalp.agent.llm as llm_module
+from sankalp.agent.llm import LLMAdapter
 from sankalp.memory import ObsidianMemory
 from sankalp.sessions import SessionStore
 from sankalp.tools import ToolRegistry
@@ -23,6 +25,20 @@ class FakeLLM:
 
 
 class AgentTests(unittest.TestCase):
+    def test_llm_prompt_reads_soul_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_soul = llm_module.SOUL_FILE
+            soul = Path(tmp) / "SOUL.md"
+            soul.write_text("# Persona\n\nBe concise and kind.\n", encoding="utf-8")
+            try:
+                llm_module.SOUL_FILE = soul
+                prompt = LLMAdapter()._developer_prompt("")
+            finally:
+                llm_module.SOUL_FILE = old_soul
+
+            self.assertIn("Agent persona", prompt)
+            self.assertIn("Be concise and kind.", prompt)
+
     def test_remember_routes_to_memory_tool(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

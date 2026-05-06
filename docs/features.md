@@ -74,8 +74,15 @@ Every tool call is logged into the session activity trace. Obvious commands are 
 deterministically first. If no deterministic route matches, the configured model can choose
 from safe read/search tools before normal chat.
 
-- `Settings -> Capabilities` lists Sankalp user-facing skills, backend tools, and slash commands.
+- `Settings -> Capabilities` lists Sankalp folder-backed skills, backend tools, and slash commands.
 - Typing `/` in the composer opens a slash-command picker with keyboard navigation.
+
+## Skills
+
+- Skills are installed under `~/.sankalp/skills`.
+- Each skill is a folder with `skill.json`, `DESCRIPTION.md`, and `SKILL.md`.
+- Optional skill files include `setup.md`, `scripts/`, `examples/`, and `assets/`.
+- Startup seeds the bundled `note-taking/obsidian` skill when it is missing.
 
 ## macOS App
 
@@ -91,9 +98,11 @@ from safe read/search tools before normal chat.
 ## Windows App
 
 - One-command PowerShell installer clones or updates Sankalp under
-  `%LOCALAPPDATA%\Sankalp\app`, builds the WebUI, creates a Start Menu shortcut, and opens
+  `%USERPROFILE%\.sankalp\app`, builds the WebUI, creates a Start Menu shortcut, and opens
   Sankalp.
 - Managed app checkout reset semantics match macOS for safe reinstall/update.
+- Reinstall migrates legacy `%LOCALAPPDATA%\Sankalp\app` and `%USERPROFILE%\sankalp`
+  installs into the `~/.sankalp` agent-home layout when possible.
 - Obsidian onboarding checks install status and opens the official download page when needed.
 - Obsidian vault path is auto-detected from Obsidian registry when accessible.
 - Optional vault-picker prompt is supported during install with

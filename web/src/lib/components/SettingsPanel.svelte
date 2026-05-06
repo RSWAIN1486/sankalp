@@ -34,7 +34,7 @@
   let localOpenAIKey = "";
   let geminiKey = "";
   let openaiKey = "";
-  let capabilities: Capabilities = { skills: [], tools: [], commands: [] };
+  let capabilities: Capabilities = { features: [], skills: [], tools: [], commands: [] };
   $: needsVaultAccess = macosAvailable && !memoryStatus.accessible;
 
   const tabs: Array<{ id: Tab; label: string }> = [
@@ -394,14 +394,26 @@
   {:else if $chatState.settingsTab === "capabilities"}
     <section class="settings-section">
       <h2><Sparkles size={16} /> Capabilities</h2>
-      <p>Use `/` in the composer to open slash-command suggestions instantly.</p>
 
       <div class="capability-group">
         <h3>Skills</h3>
         {#each capabilities.skills as skill}
           <article class="capability-item">
-            <strong>{skill.label}</strong>
+            <strong>{skill.name}</strong>
             <span>{skill.description}</span>
+            <small>{skill.path}/{skill.entrypoint}</small>
+          </article>
+        {:else}
+          <p>No installed skills found.</p>
+        {/each}
+      </div>
+
+      <div class="capability-group">
+        <h3>Features</h3>
+        {#each capabilities.features as feature}
+          <article class="capability-item">
+            <strong>{feature.label}</strong>
+            <span>{feature.description}</span>
           </article>
         {/each}
       </div>

@@ -213,6 +213,7 @@ static void free_port(void) {{
 int main(void) {{
   const char *repo = "{repo_root}";
   const char *home = getenv("HOME");
+  char state_dir[4096];
   char log_dir[4096];
   char log_file[4096];
   char health_cmd[512];
@@ -225,7 +226,9 @@ int main(void) {{
   free_port();
 
   if (!home) home = "/tmp";
-  snprintf(log_dir, sizeof(log_dir), "%s/.sankalp", home);
+  snprintf(state_dir, sizeof(state_dir), "%s/.sankalp", home);
+  snprintf(log_dir, sizeof(log_dir), "%s/.sankalp/logs", home);
+  mkdir(state_dir, 0700);
   mkdir(log_dir, 0700);
   snprintf(log_file, sizeof(log_file), "%s/Sankalp.app.log", log_dir);
 
@@ -278,7 +281,7 @@ export SANKALP_HOST="${{SANKALP_HOST:-{HOST}}}"
 export SANKALP_PORT="${{SANKALP_PORT:-{PORT}}}"
 export SANKALP_REPO_DIR="{repo_root}"
 
-LOG_DIR="$HOME/.sankalp"
+LOG_DIR="$HOME/.sankalp/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/Sankalp.app.log"
 URL="http://${{SANKALP_HOST}}:${{SANKALP_PORT}}"
