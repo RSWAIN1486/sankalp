@@ -157,6 +157,11 @@ settings drawer directly on the memory tab, where the UI can browse workspace ch
 preview notes recursively, and open notes or folders through the existing `/api/memory/open` helper. Tool activity is
 not shown as a right sidebar; it appears as a collapsible Markdown-rendered block above the
 latest assistant message when the session has tool calls.
+The settings drawer now follows standard sidebar behavior with a full-screen backdrop:
+clicking outside the drawer closes it, while clicks inside the panel keep it open.
+Provider settings also include an optional Streaming diagnostics toggle that persists in
+IndexedDB and shows live SSE event counts and output/reasoning character totals so provider
+stream cadence can be validated without external logs.
 On macOS, the Memory panel also exposes explicit helpers to request vault folder access via
 native folder picker, open Full Disk Access settings, and open the Obsidian download page
 when Obsidian is not installed.
@@ -171,6 +176,7 @@ stops the loopback server and asks the browser tab to close, while Restart queue
 installed app launcher before shutting down the current backend. The conversation row menu (Edit/Export/Delete) is
 rendered as a viewport-fixed anchored popover rather than inside the scroll container so
 opening actions never mutates sidebar scrollbars or list layout.
+Composer submission now defaults to `Enter` to send and `Shift+Enter` to insert a newline.
 
 ## Flow
 
@@ -178,17 +184,23 @@ opening actions never mutates sidebar scrollbars or list layout.
 Browser
   -> SvelteKit WebUI
   -> /api/chat/stream
-  -> Agent.turn
+  -> Agent.turn_stream
   -> SessionStore get/create
   -> append user turn
-  -> route explicit tool or call LLMAdapter
+  -> route explicit tool or call LLMAdapter.stream_complete
   -> append assistant turn
-  -> stream status/session/delta/done events
+  -> stream status/reasoning/delta/session/done events
 ```
 
 The synchronous `/api/chat` route remains as a simple JSON fallback. The UI uses
-`/api/chat/stream` for thinking status and progressive assistant rendering. Provider-native
-token streaming can be added later behind the same SSE event contract.
+`/api/chat/stream` for thinking status and progressive assistant rendering. OpenAI Responses,
+OpenAI-compatible chat providers, Gemini, and Codex now stream token deltas through this
+route. Providers without native streaming still use the same SSE event contract and degrade
+to a single final delta.
+
+The message list now exposes live agent activity in a collapsible inline panel on the latest
+assistant message. While a response is pending, the panel accumulates `reasoning` stream
+events as "Live thinking"; after completion, tool-call activity is shown in the same panel.
 
 Session titles use an immediate deterministic fallback, then a background title call updates
 the session. The title call ignores the chat message's selected provider/model and chooses

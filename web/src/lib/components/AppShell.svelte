@@ -4,7 +4,7 @@
   import MessageList from "$lib/components/MessageList.svelte";
   import SettingsPanel from "$lib/components/SettingsPanel.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
-  import { chatState, dismissUpdateBanner, openSettings } from "$lib/stores/chat";
+  import { chatState, closeSettings, dismissUpdateBanner, openSettings } from "$lib/stores/chat";
 
   $: showUpdateBanner = Boolean($chatState.appUpdate?.update_available && !$chatState.updateBannerDismissed);
 </script>
@@ -26,6 +26,9 @@
     <Composer />
   </section>
   {#if $chatState.settingsOpen}
-    <SettingsPanel />
+    <button class="settings-backdrop" type="button" aria-label="Close settings" on:click={closeSettings}></button>
+    <div class="settings-container" on:click|stopPropagation>
+      <SettingsPanel />
+    </div>
   {/if}
 </main>

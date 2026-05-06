@@ -29,12 +29,18 @@
     return { total: removed.length, userCount, assistantCount };
   }
 
-  function activityMarkdown() {
-    if (!$chatState.toolCalls.length) return "";
-    return $chatState.toolCalls.map((call, index) => {
+  function activityMarkdown(reasoning: string) {
+    const blocks: string[] = [];
+    if (reasoning.trim()) {
+      blocks.push(`### Live thinking\n\n${reasoning.trim()}`);
+    }
+    if (!$chatState.toolCalls.length) return blocks.join("\n\n");
+    const toolSections = $chatState.toolCalls.map((call, index) => {
       const output = call.output === undefined ? "" : `\n\n\`\`\`json\n${JSON.stringify(call.output, null, 2)}\n\`\`\``;
       return `### ${index + 1}. ${call.name}\n\nStatus: **${call.status}**${output}`;
     }).join("\n\n");
+    blocks.push(toolSections);
+    return blocks.join("\n\n");
   }
 
   async function confirmDelete() {
@@ -89,10 +95,10 @@
   {:else}
     {#each $chatState.messages as message, index}
       <article class:assistant={message.role === "assistant"} class:user={message.role === "user"} class="message-row">
-        {#if message.role === "assistant" && index === lastAssistantIndex && $chatState.toolCalls.length}
+        {#if message.role === "assistant" && index === lastAssistantIndex && ($chatState.toolCalls.length || (message.reasoning || "").trim())}
           <details class="activity-inline">
-            <summary><Brain size={18} /> Activity</summary>
-            <div>{@html renderMarkdown(activityMarkdown())}</div>
+            <summary><Brain size={18} /> Thinking and activity</summary>
+            <div>{@html renderMarkdown(activityMarkdown(message.reasoning || ""))}</div>
           </details>
         {/if}
         <div class="message-bubble">

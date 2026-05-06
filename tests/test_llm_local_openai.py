@@ -12,6 +12,26 @@ from sankalp.agent.llm import LLMAdapter
 
 
 class LocalOpenAITests(unittest.TestCase):
+    def test_gemini_stream_emits_deltas(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                payload = json.dumps({"candidates": [{"content": {"parts": [{"text": "hello "}]} }]}).encode("utf-8")
+                payload2 = json.dumps({"candidates": [{"content": {"parts": [{"text": "gemini"}]} }]}).encode("utf-8")
+                return iter([b"data: " + payload + b"\n\n", b"data: " + payload2 + b"\n\n"])
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}):
+            with patch("sankalp.agent.llm.urllib.request.urlopen", return_value=FakeResponse()):
+                events = list(LLMAdapter()._gemini_stream({"gemini_model": "gemini-2.5-flash"}, [{"role": "user", "content": "hi"}], ""))
+        deltas = [event["text"] for event in events if event.get("type") == "delta"]
+        self.assertEqual("".join(deltas), "hellogemini")
+        self.assertEqual(events[-1]["type"], "response_id")
+
     def test_local_openai_chat_completions_adapter(self):
         seen = {}
 

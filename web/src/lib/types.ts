@@ -6,6 +6,7 @@ export type ChatMessage = {
   pending?: boolean;
   status?: string;
   tools?: string;
+  reasoning?: string;
 };
 
 export type SessionSummary = {
@@ -51,6 +52,18 @@ export type ComposerPreference = Partial<ComposerOptions> & {
   models_by_provider?: Record<string, string>;
 };
 
+export type StreamDiagnostics = {
+  enabled: boolean;
+  active_provider: string;
+  started_at: number | null;
+  last_event_at: number | null;
+  events: Record<string, number>;
+  chars: {
+    delta: number;
+    reasoning: number;
+  };
+};
+
 export type ModelOption = {
   id: string;
   label?: string;
@@ -87,6 +100,7 @@ export type AppUpdateStatus = {
 export type StreamEvent =
   | { event: "status"; data: { label?: string; detail?: string } }
   | { event: "session"; data: { session: SessionSummary; tool_calls?: ToolCall[] } }
+  | { event: "reasoning"; data: { text?: string } }
   | { event: "delta"; data: { text?: string } }
   | { event: "done"; data: { session: SessionSummary; messages: ChatMessage[]; tool_calls?: ToolCall[] } }
   | { event: "error"; data: { error?: string } };

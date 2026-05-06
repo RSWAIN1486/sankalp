@@ -310,7 +310,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("content-type", "text/event-stream; charset=utf-8")
         self.send_header("cache-control", "no-store")
-        self.send_header("connection", "close")
+        self.send_header("x-accel-buffering", "no")
+        self.send_header("connection", "keep-alive")
         self.end_headers()
 
         def send(event: str, payload: object) -> None:
@@ -318,9 +319,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(f"event: {event}\ndata: {data}\n\n".encode("utf-8"))
             self.wfile.flush()
 
-        send("status", {"label": "Thinking", "detail": "Preparing context"})
         try:
-            response = AGENT.turn(
+            for item in AGENT.turn_stream(
                 body.get("session_id"),
                 body.get("message", ""),
                 {
@@ -328,13 +328,8 @@ class Handler(BaseHTTPRequestHandler):
                     "options": body.get("options") or {},
                     "edit_index": body.get("edit_index"),
                 },
-            )
-            send("session", {"session": response["session"], "tool_calls": response.get("tool_calls", [])})
-            text = response["message"]["content"]
-            for index in range(0, len(text), 80):
-                send("delta", {"text": text[index:index + 80]})
-                time.sleep(0.01)
-            send("done", response)
+            ):
+                send(str(item.get("event") or "status"), item.get("data") or {})
             self.close_connection = True
         except Exception as exc:
             traceback.print_exc()

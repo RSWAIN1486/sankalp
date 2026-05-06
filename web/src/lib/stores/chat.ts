@@ -1,7 +1,7 @@
 import { derived, get, writable } from "svelte/store";
 import { api, streamChat } from "$lib/services/api";
-import { db, loadComposerPreference, saveComposerPreference } from "$lib/storage/db";
-import type { AppUpdateStatus, ChatMessage, ComposerOptions, ModelOption, ProviderModels, SessionSummary, Settings, StreamEvent, ToolCall } from "$lib/types";
+import { db, loadComposerPreference, loadStreamDiagnosticsEnabled, saveComposerPreference, saveStreamDiagnosticsEnabled } from "$lib/storage/db";
+import type { AppUpdateStatus, ChatMessage, ComposerOptions, ModelOption, ProviderModels, SessionSummary, Settings, StreamDiagnostics, StreamEvent, ToolCall } from "$lib/types";
 
 type ModelCatalogEntry = ProviderModels & {
   loading?: boolean;
@@ -26,6 +26,7 @@ type ChatState = {
   sidebarCollapsed: boolean;
   appUpdate: AppUpdateStatus | null;
   updateBannerDismissed: boolean;
+  streamDiagnostics: StreamDiagnostics;
 };
 
 const providerOptions: Array<{ id: string; label: string }> = [
@@ -61,7 +62,15 @@ const initialState: ChatState = {
   settingsTab: "provider",
   sidebarCollapsed: false,
   appUpdate: null,
-  updateBannerDismissed: false
+  updateBannerDismissed: false,
+  streamDiagnostics: {
+    enabled: false,
+    active_provider: "local",
+    started_at: null,
+    last_event_at: null,
+    events: {},
+    chars: { delta: 0, reasoning: 0 }
+  }
 };
 
 export const chatState = writable<ChatState>(initialState);
@@ -83,10 +92,11 @@ export const composerModelOptions = derived(chatState, ($state) => {
 });
 
 export async function initializeChat(): Promise<void> {
-  const [sessionsData, settingsData, preference] = await Promise.all([
+  const [sessionsData, settingsData, preference, streamDiagnosticsEnabled] = await Promise.all([
     api<{ sessions: SessionSummary[] }>("/api/sessions"),
     api<{ settings: Settings }>("/api/settings"),
-    loadComposerPreference()
+    loadComposerPreference(),
+    loadStreamDiagnosticsEnabled()
   ]);
   const settings = settingsData.settings || {};
   const provider = preference.provider || settings.provider || "local";
@@ -105,7 +115,11 @@ export async function initializeChat(): Promise<void> {
     sessions: sessionsData.sessions || [],
     settings,
     composer,
-    composerModelsByProvider: modelsByProvider
+    composerModelsByProvider: modelsByProvider,
+    streamDiagnostics: {
+      ...state.streamDiagnostics,
+      enabled: streamDiagnosticsEnabled
+    }
   }));
   void ensureProviderModels(provider);
   void Promise.all(["local_openai", "codex", "gemini", "openai"].map((item) => ensureProviderModels(item)));
@@ -151,7 +165,8 @@ export async function sendMessage(text: string, editIndex: number | null = null)
   const trimmed = text.trim();
   if (!trimmed) return;
   const snapshot = get(chatState);
-  const pendingAssistant: ChatMessage = { role: "assistant", content: "", pending: true, status: "Thinking" };
+  const activeProvider = snapshot.composer.provider || snapshot.settings.provider || "local";
+  const pendingAssistant: ChatMessage = { role: "assistant", content: "", pending: true, status: "Thinking", reasoning: "" };
 
   chatState.update((state) => ({
     ...state,
@@ -162,7 +177,15 @@ export async function sendMessage(text: string, editIndex: number | null = null)
     ],
     draft: "",
     editIndex: null,
-    status: "Thinking"
+    status: "Thinking",
+    streamDiagnostics: {
+      ...state.streamDiagnostics,
+      active_provider: activeProvider,
+      started_at: Date.now(),
+      last_event_at: Date.now(),
+      events: {},
+      chars: { delta: 0, reasoning: 0 }
+    }
   }));
 
   try {
@@ -301,6 +324,14 @@ export function dismissUpdateBanner(): void {
   const version = get(chatState).appUpdate?.latest_version || "";
   if (version) localStorage.setItem("sankalp-update-dismissed-version", version);
   chatState.update((state) => ({ ...state, updateBannerDismissed: true }));
+}
+
+export async function setStreamDiagnosticsEnabled(enabled: boolean): Promise<void> {
+  chatState.update((state) => ({
+    ...state,
+    streamDiagnostics: { ...state.streamDiagnostics, enabled }
+  }));
+  await saveStreamDiagnosticsEnabled(enabled);
 }
 
 export async function checkAppUpdate(force = false): Promise<void> {
@@ -445,6 +476,17 @@ export async function ensureProviderModels(provider: string, force = false): Pro
 }
 
 function handleStreamEvent(item: StreamEvent): void {
+  chatState.update((state) => ({
+    ...state,
+    streamDiagnostics: {
+      ...state.streamDiagnostics,
+      last_event_at: Date.now(),
+      events: {
+        ...state.streamDiagnostics.events,
+        [item.event]: (state.streamDiagnostics.events[item.event] || 0) + 1
+      }
+    }
+  }));
   if (item.event === "status") {
     chatState.update((state) => ({
       ...state,
@@ -466,9 +508,33 @@ function handleStreamEvent(item: StreamEvent): void {
   if (item.event === "delta") {
     chatState.update((state) => ({
       ...state,
+      streamDiagnostics: {
+        ...state.streamDiagnostics,
+        chars: {
+          ...state.streamDiagnostics.chars,
+          delta: state.streamDiagnostics.chars.delta + (item.data.text || "").length
+        }
+      },
       messages: state.messages.map((message, index) =>
         index === state.messages.length - 1 && message.pending
           ? { ...message, content: message.content + (item.data.text || "") }
+          : message
+      )
+    }));
+  }
+  if (item.event === "reasoning") {
+    chatState.update((state) => ({
+      ...state,
+      streamDiagnostics: {
+        ...state.streamDiagnostics,
+        chars: {
+          ...state.streamDiagnostics.chars,
+          reasoning: state.streamDiagnostics.chars.reasoning + (item.data.text || "").length
+        }
+      },
+      messages: state.messages.map((message, index) =>
+        index === state.messages.length - 1 && message.pending
+          ? { ...message, reasoning: (message.reasoning || "") + (item.data.text || "") }
           : message
       )
     }));
@@ -522,8 +588,12 @@ function selectedModelForProvider(
   catalog: Record<string, ModelCatalogEntry> = {}
 ): string {
   if (provider === "local") return "";
-  const saved = modelsByProvider[provider] || "";
-  const configured = modelForProvider(provider, settings);
+  let saved = modelsByProvider[provider] || "";
+  let configured = modelForProvider(provider, settings);
+  if (provider === "codex") {
+    if (saved === "gpt-5.5-mini") saved = "";
+    if (configured === "gpt-5.5-mini") configured = "";
+  }
   const available = catalog[provider]?.models || [];
   if (saved && (!available.length || available.some((model) => model.id === saved))) return saved;
   if (configured && (!available.length || available.some((model) => model.id === configured))) return configured;

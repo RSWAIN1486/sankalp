@@ -1034,6 +1034,22 @@ button {
   font-size: 14px;
 }
 
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: rgba(0, 0, 0, 0.24);
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.settings-container {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 20;
+}
+
 .settings-drawer header button,
 .settings-actions button,
 .settings-inline button,

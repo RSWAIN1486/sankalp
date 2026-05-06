@@ -41,3 +41,12 @@ export async function loadComposerPreference(): Promise<ComposerPreference> {
   const record = await db.preferences.get("composer");
   return (record?.value || {}) as ComposerPreference;
 }
+
+export async function saveStreamDiagnosticsEnabled(value: boolean): Promise<void> {
+  await db.preferences.put({ key: "stream_diagnostics_enabled", value });
+}
+
+export async function loadStreamDiagnosticsEnabled(): Promise<boolean> {
+  const record = await db.preferences.get("stream_diagnostics_enabled");
+  return Boolean(record?.value);
+}

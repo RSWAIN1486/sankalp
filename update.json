@@ -1,9 +1,9 @@
 {
-  "version": "0.1.7",
+  "version": "0.1.8",
   "channel": "stable",
-  "title": "Removed features from capabilities",
+  "title": "Live streaming",
   "notes": [
-    "Maintenance and quality improvements"
+    "Live streaming would show for model providers whereever supported."
   ],
   "minimum_supported_version": "0.1.0"
 }

@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { Download, Folder, KeyRound, RotateCw, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
   import { api } from "$lib/services/api";
-  import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, startAppUpdate } from "$lib/stores/chat";
+  import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, setStreamDiagnosticsEnabled, startAppUpdate } from "$lib/stores/chat";
   import type { Capabilities, Settings } from "$lib/types";
 
   type Tab = "provider" | "memory" | "profile" | "app" | "capabilities";
@@ -46,6 +46,8 @@
   ];
 
   $: provider = settings.provider || "local";
+  $: diagnostics = $chatState.streamDiagnostics;
+  $: streamDurationMs = diagnostics.started_at && diagnostics.last_event_at ? diagnostics.last_event_at - diagnostics.started_at : 0;
 
   onMount(async () => {
     await loadAll();
@@ -255,6 +257,11 @@
     }
     status = data.vault_access?.cancelled ? "Vault selection cancelled" : data.vault_access?.error || "Could not request vault access.";
   }
+
+  async function toggleStreamDiagnostics(event: Event) {
+    const target = event.currentTarget as HTMLInputElement;
+    await setStreamDiagnosticsEnabled(Boolean(target?.checked));
+  }
 </script>
 
 <aside class="settings-drawer">
@@ -312,6 +319,19 @@
         <button type="button" on:click={testProvider}>Test hello</button>
       </div>
       {#if providerTest}<p>{providerTest}</p>{/if}
+
+      <div class="settings-inline">
+        <label>
+          <input type="checkbox" checked={diagnostics.enabled} on:change={toggleStreamDiagnostics} />
+          Streaming diagnostics
+        </label>
+      </div>
+      {#if diagnostics.enabled}
+        <p>Active provider: <strong>{diagnostics.active_provider || "unknown"}</strong></p>
+        <p>Stream time: {Math.round(streamDurationMs / 10) / 100}s</p>
+        <p>Events: status {diagnostics.events.status || 0}, reasoning {diagnostics.events.reasoning || 0}, delta {diagnostics.events.delta || 0}, done {diagnostics.events.done || 0}, error {diagnostics.events.error || 0}</p>
+        <p>Chars: output {diagnostics.chars.delta}, thinking {diagnostics.chars.reasoning}</p>
+      {/if}
     </section>
   {:else if $chatState.settingsTab === "memory"}
     <section class="settings-section">

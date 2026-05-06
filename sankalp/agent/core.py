@@ -64,6 +64,78 @@ class Agent:
             self._generate_title_async(session.session_id, content, options)
         return self._payload(session, answer)
 
+    def turn_stream(self, session_id: str | None, content: str, request: dict[str, Any] | None = None):
+        request = request or {}
+        attachments = list(request.get("attachments") or [])
+        options = dict(request.get("options") or {})
+        session = self.sessions.get(session_id)
+        edit_index = request.get("edit_index")
+        if isinstance(edit_index, int) and 0 <= edit_index < len(session.messages):
+            session.messages = session.messages[:edit_index]
+            session.tool_calls = []
+            session.previous_response_id = None
+        should_title = not session.messages and session.title_source != "manual"
+        content = content.strip()
+        stored_content = self._stored_user_content(content, attachments)
+        session.messages.append({"role": "user", "content": stored_content})
+        self.memory.append_session_turn(session.session_id, "user", stored_content)
+        if should_title:
+            session.title = title_from_query(content)
+            session.title_source = "fallback"
+        yield {"event": "status", "data": {"label": "Thinking", "detail": "Preparing context"}}
+
+        routed = self._route_explicit_tool(session, content, options)
+        answer = ""
+        if routed is not None:
+            answer = routed
+            yield {"event": "status", "data": {"label": "Done", "detail": "Handled by built-in tool"}}
+            yield {"event": "delta", "data": {"text": answer}}
+        else:
+            selected = self._route_llm_selected_tool(session, content, options)
+            if selected is not None:
+                answer = selected
+                yield {"event": "status", "data": {"label": "Done", "detail": "Handled by selected tool"}}
+                yield {"event": "delta", "data": {"text": answer}}
+            else:
+                hits = self.memory.retrieve(content)
+                memory_context = self._memory_context(content, hits)
+                yield {"event": "status", "data": {"label": "Thinking", "detail": "Generating response"}}
+                try:
+                    streamer = getattr(self.llm, "stream_complete", None)
+                    if callable(streamer):
+                        for event in streamer(session.messages, memory_context, session.previous_response_id, options, attachments):
+                            kind = event.get("type")
+                            if kind == "delta":
+                                text = str(event.get("text") or "")
+                                if text:
+                                    answer += text
+                                    yield {"event": "delta", "data": {"text": text}}
+                            elif kind == "reasoning":
+                                text = str(event.get("text") or "")
+                                if text:
+                                    yield {"event": "reasoning", "data": {"text": text}}
+                            elif kind == "response_id":
+                                session.previous_response_id = event.get("response_id")
+                    else:
+                        result = self.llm.complete(session.messages, memory_context, session.previous_response_id, options, attachments)
+                        session.previous_response_id = result.get("response_id")
+                        answer = str(result.get("text") or "")
+                        if answer:
+                            yield {"event": "delta", "data": {"text": answer}}
+                except Exception as exc:
+                    answer = f"I hit an LLM adapter error: {exc}"
+                    yield {"event": "delta", "data": {"text": answer}}
+                self._maybe_infer_profile_trait(session, content)
+
+        session.messages.append({"role": "assistant", "content": answer})
+        self.memory.append_session_turn(session.session_id, "assistant", answer)
+        self.sessions.save(session)
+        if should_title:
+            self._generate_title_async(session.session_id, content, options)
+        payload = self._payload(session, answer)
+        yield {"event": "session", "data": {"session": payload["session"], "tool_calls": payload.get("tool_calls", [])}}
+        yield {"event": "done", "data": payload}
+
     def _route_explicit_tool(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
         lowered = content.lower()
         if lowered.startswith("/remember ") or lowered.startswith("remember:") or lowered.startswith("remember "):

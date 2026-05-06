@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import urllib.request
 from typing import Any
+from urllib.error import HTTPError
+from urllib.parse import quote
 
 from sankalp.config import MODEL, ROOT, SOUL_FILE
 from sankalp.sessions.store import title_from_query
@@ -14,6 +16,37 @@ from sankalp.settings import load_settings
 
 
 class LLMAdapter:
+    def stream_complete(
+        self,
+        messages: list[dict[str, str]],
+        memory_context: str,
+        previous_response_id: str | None = None,
+        options: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ):
+        settings = self._settings_with_options(options or {})
+        attachments = attachments or []
+        provider = settings.get("provider", "local")
+        if provider == "openai":
+            api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+            if api_key:
+                yield from self._openai_stream(api_key, settings, messages, memory_context, previous_response_id, attachments)
+                return
+        if provider == "local_openai":
+            yield from self._local_openai_stream(settings, messages, memory_context, attachments)
+            return
+        if provider == "gemini":
+            yield from self._gemini_stream(settings, messages, memory_context, attachments)
+            return
+        if provider == "codex":
+            yield from self._codex_stream(settings, messages, memory_context)
+            return
+        result = self.complete(messages, memory_context, previous_response_id, options, attachments)
+        text = str(result.get("text") or "")
+        if text:
+            yield {"type": "delta", "text": text}
+        yield {"type": "response_id", "response_id": result.get("response_id"), "provider": result.get("provider")}
+
     def memory_search_query(self, message: str, options: dict[str, Any] | None = None) -> str | None:
         settings = self._settings_with_options(options or {})
         provider = settings.get("provider", "local")
@@ -204,6 +237,8 @@ class LLMAdapter:
         provider = str(options.get("provider") or settings.get("provider") or "local")
         settings["provider"] = provider
         model = str(options.get("model") or "").strip()
+        if provider == "codex" and model == "gpt-5.5-mini":
+            model = ""
         if model:
             if provider == "openai":
                 settings["openai_model"] = model
@@ -337,6 +372,57 @@ class LLMAdapter:
             "provider": "openai-responses",
         }
 
+    def _openai_stream(
+        self,
+        api_key: str,
+        settings: dict[str, Any],
+        messages: list[dict[str, Any]],
+        memory_context: str,
+        previous_response_id: str | None,
+        attachments: list[dict[str, Any]],
+    ):
+        payload: dict[str, Any] = {
+            "model": settings.get("openai_model") or MODEL,
+            "input": self._openai_input(messages, memory_context, attachments),
+            "store": True,
+            "stream": True,
+        }
+        effort = settings.get("reasoning_effort")
+        if effort and effort != "none":
+            payload["reasoning"] = {"effort": effort}
+        if previous_response_id:
+            payload["previous_response_id"] = previous_response_id
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        response_id = None
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                for event in self._iter_sse_json(response):
+                    event_type = str(event.get("type") or "")
+                    if event_type == "response.created":
+                        response_id = event.get("response", {}).get("id") or event.get("id")
+                    elif event_type in {"response.output_text.delta", "response.output_text.annotation.added"}:
+                        delta = event.get("delta")
+                        if isinstance(delta, str) and delta:
+                            yield {"type": "delta", "text": delta}
+                    elif event_type in {"response.reasoning_summary_text.delta", "response.reasoning.delta"}:
+                        delta = event.get("delta")
+                        if isinstance(delta, str) and delta:
+                            yield {"type": "reasoning", "text": delta}
+                    elif event_type == "response.completed":
+                        response_id = event.get("response", {}).get("id") or response_id
+                    elif event_type == "error":
+                        message = event.get("error", {}).get("message") or "OpenAI streaming error."
+                        raise RuntimeError(str(message))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"OpenAI request failed: HTTP {exc.code} {detail}") from exc
+        yield {"type": "response_id", "response_id": response_id, "provider": "openai-responses"}
+
     def _openai_input(self, messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         latest_user_index = self._latest_user_index(messages)
         media = self._media_attachments(attachments)
@@ -440,6 +526,52 @@ class LLMAdapter:
             "provider": "local-openai",
         }
 
+    def _local_openai_stream(self, settings: dict[str, Any], messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]] | None = None):
+        base_url = (settings.get("local_openai_base_url") or "").rstrip("/")
+        model = (settings.get("local_openai_model") or "").strip()
+        if not base_url:
+            yield {"type": "delta", "text": "OpenAI-compatible endpoint provider is selected, but no base URL is configured."}
+            yield {"type": "response_id", "response_id": None, "provider": "local-openai"}
+            return
+        if not model:
+            yield {"type": "delta", "text": "OpenAI-compatible endpoint provider is selected, but no model is configured."}
+            yield {"type": "response_id", "response_id": None, "provider": "local-openai"}
+            return
+        headers = {"Content-Type": "application/json"}
+        api_key = (settings.get("local_openai_api_key") or "").strip()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": model,
+            "messages": self._chat_messages(messages, memory_context, attachments),
+            "stream": True,
+        }
+        if settings.get("response_mode") == "grounded_memory_answer":
+            payload["temperature"] = 0
+        request = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        response_id = None
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                for event in self._iter_sse_json(response):
+                    if isinstance(event, str) and event == "[DONE]":
+                        break
+                    if not isinstance(event, dict):
+                        continue
+                    response_id = event.get("id") or response_id
+                    for choice in event.get("choices") or []:
+                        delta = (choice.get("delta") or {}).get("content")
+                        if isinstance(delta, str) and delta:
+                            yield {"type": "delta", "text": delta}
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"OpenAI-compatible request failed: HTTP {exc.code} {detail}") from exc
+        yield {"type": "response_id", "response_id": response_id, "provider": "local-openai"}
+
     def _codex(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str) -> dict[str, Any]:
         transcript = "\n".join(f"{item.get('role', 'user')}: {item.get('content', '')}" for item in messages[-12:])
         prompt = (
@@ -473,7 +605,8 @@ class LLMAdapter:
             proc = subprocess.run(command, input=prompt, text=True, capture_output=True, timeout=180)
             text = output.read().decode("utf-8", errors="replace").strip()
         if not text:
-            text = (proc.stdout or proc.stderr or "Codex returned no response.").strip()
+            stderr_text = self._filter_codex_stderr_text(proc.stderr or "")
+            text = (proc.stdout or stderr_text or "Codex returned no response.").strip()
         if proc.returncode != 0:
             text = "Codex provider failed:\n\n" + text
         return {
@@ -481,6 +614,211 @@ class LLMAdapter:
             "response_id": None,
             "provider": "codex",
         }
+
+    def _gemini_stream(self, settings: dict[str, Any], messages: list[dict[str, Any]], memory_context: str, attachments: list[dict[str, Any]] | None = None):
+        api_key = settings.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            yield {"type": "delta", "text": "Gemini is selected, but no Gemini API key is configured. Add it in Settings."}
+            yield {"type": "response_id", "response_id": None, "provider": "local-fallback"}
+            return
+        attachments = attachments or []
+        latest_user_index = self._latest_user_index(messages)
+        media = self._media_attachments(attachments)
+        contents = []
+        for index, message in enumerate(messages[-20:]):
+            role = "model" if message.get("role") == "assistant" else "user"
+            parts = [{"text": message.get("content", "")}]
+            if index == latest_user_index:
+                parts.extend({
+                    "inline_data": {
+                        "mime_type": attachment.get("type") or "application/octet-stream",
+                        "data": attachment.get("data") or "",
+                    }
+                } for attachment in media)
+            contents.append({"role": role, "parts": parts})
+        model = settings.get("gemini_model") or "gemini-2.5-flash"
+        payload = {
+            "systemInstruction": {"parts": [{"text": self._developer_prompt(memory_context)}]},
+            "contents": contents,
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:" \
+              f"streamGenerateContent?alt=sse&key={quote(str(api_key), safe='')}"
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        emitted = False
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                for event in self._iter_sse_json(response):
+                    if not isinstance(event, dict):
+                        continue
+                    text = self._extract_gemini_text(event)
+                    if text:
+                        emitted = True
+                        yield {"type": "delta", "text": text}
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Gemini request failed: HTTP {exc.code} {detail}") from exc
+        if not emitted:
+            yield {"type": "delta", "text": "Gemini returned no stream text."}
+        yield {"type": "response_id", "response_id": None, "provider": "gemini"}
+
+    def _codex_stream(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str):
+        transcript = "\n".join(f"{item.get('role', 'user')}: {item.get('content', '')}" for item in messages[-12:])
+        prompt = (
+            self._developer_prompt(memory_context)
+            + "\n\nRespond to the latest user message as a personal assistant. "
+            + "Do not edit files or run project-changing commands.\n\nTranscript:\n"
+            + transcript
+        )
+        with tempfile.NamedTemporaryFile(prefix="sankalp-codex-stream-", suffix=".txt") as output:
+            command = [
+                "codex",
+                "exec",
+                "--json",
+                "--sandbox",
+                "read-only",
+                "--cd",
+                str(ROOT),
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--color",
+                "never",
+                "--output-last-message",
+                output.name,
+                "-",
+            ]
+            model = (settings.get("codex_model") or "").strip()
+            if model:
+                command[2:2] = ["-m", model]
+            effort = str(settings.get("reasoning_effort") or "").strip()
+            if effort and effort != "none":
+                command[2:2] = ["-c", f'model_reasoning_effort="{effort}"']
+            proc = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            emitted = False
+            try:
+                assert proc.stdin is not None
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    kind = str(event.get("type") or "")
+                    if "reason" in kind or "thinking" in kind:
+                        delta = self._extract_codex_delta(event)
+                        if delta:
+                            yield {"type": "reasoning", "text": delta}
+                    else:
+                        delta = self._extract_codex_delta(event)
+                        if delta:
+                            emitted = True
+                            yield {"type": "delta", "text": delta}
+                proc.wait(timeout=300)
+                if not emitted:
+                    last_message = output.read().decode("utf-8", errors="replace").strip()
+                    if last_message:
+                        yield {"type": "delta", "text": last_message}
+                    else:
+                        fallback = self._extract_codex_fallback_from_stderr(proc)
+                        if fallback:
+                            yield {"type": "delta", "text": fallback}
+                        else:
+                            # Fallback to the known-working non-streaming Codex path.
+                            recovered = self._codex(settings, messages, memory_context)
+                            recovered_text = str(recovered.get("text") or "").strip()
+                            if recovered_text:
+                                yield {"type": "delta", "text": recovered_text}
+                            elif proc.returncode != 0:
+                                yield {"type": "delta", "text": "Codex provider failed with no stream output."}
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+        yield {"type": "response_id", "response_id": None, "provider": "codex"}
+
+    def _extract_codex_delta(self, event: dict[str, Any]) -> str:
+        candidates = [
+            event.get("delta"),
+            event.get("text"),
+            event.get("content"),
+            (event.get("data") or {}).get("delta") if isinstance(event.get("data"), dict) else None,
+            (event.get("data") or {}).get("text") if isinstance(event.get("data"), dict) else None,
+        ]
+        for item in candidates:
+            if isinstance(item, str) and item:
+                return item
+        message = event.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str) and content:
+                return content
+            if isinstance(content, list):
+                texts: list[str] = []
+                for part in content:
+                    if isinstance(part, dict):
+                        text = part.get("text")
+                        if isinstance(text, str) and text:
+                            texts.append(text)
+                if texts:
+                    return "".join(texts)
+        data = event.get("data")
+        if isinstance(data, dict):
+            msg = data.get("message")
+            if isinstance(msg, dict):
+                content = msg.get("content")
+                if isinstance(content, str) and content:
+                    return content
+                if isinstance(content, list):
+                    texts: list[str] = []
+                    for part in content:
+                        if isinstance(part, dict):
+                            text = part.get("text")
+                            if isinstance(text, str) and text:
+                                texts.append(text)
+                    if texts:
+                        return "".join(texts)
+        return ""
+
+    def _extract_codex_fallback_from_stderr(self, proc: subprocess.Popen) -> str:
+        try:
+            stderr_text = proc.stderr.read() if proc.stderr else ""
+        except Exception:
+            return ""
+        if not stderr_text:
+            return ""
+        lines = [line.strip() for line in self._filter_codex_stderr_text(stderr_text).splitlines() if line.strip()]
+        if not lines:
+            return ""
+        return "\n".join(lines[-6:])
+
+    def _filter_codex_stderr_text(self, text: str) -> str:
+        if not text:
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        filtered: list[str] = []
+        for line in lines:
+            lower = line.lower()
+            if "warning: no last agent message" in lower:
+                continue
+            if "wrote empty content to" in lower and ("sankalp-codex-stream-" in lower or "sankalp-codex-" in lower):
+                continue
+            filtered.append(line)
+        return "\n".join(filtered)
 
     def _extract_text(self, data: dict[str, Any]) -> str:
         if isinstance(data.get("output_text"), str):
@@ -509,6 +847,22 @@ class LLMAdapter:
             if isinstance(content, str):
                 return content.strip()
         return "The local OpenAI-compatible server responded, but I could not extract message content."
+
+    def _iter_sse_json(self, response):
+        for raw in response:
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if not payload:
+                continue
+            if payload == "[DONE]":
+                yield payload
+                continue
+            try:
+                yield json.loads(payload)
+            except json.JSONDecodeError:
+                continue
 
     def _selected_model(self, settings: dict[str, Any]) -> str:
         provider = str(settings.get("provider") or "local")

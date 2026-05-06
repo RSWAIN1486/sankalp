@@ -30,7 +30,6 @@ GEMINI_FALLBACK = [
 
 CODEX_FALLBACK = [
     {"id": "gpt-5.5", "label": "GPT-5.5"},
-    {"id": "gpt-5.5-mini", "label": "GPT-5.5 Mini"},
     {"id": "gpt-5.4", "label": "GPT-5.4"},
     {"id": "gpt-5.4-mini", "label": "GPT-5.4 Mini"},
     {"id": "gpt-5.3-codex", "label": "GPT-5.3 Codex"},
@@ -172,6 +171,8 @@ def _codex_models() -> dict[str, Any]:
         for item in data.get("models", []):
             if item.get("visibility") == "list":
                 slug = item["slug"]
+                if slug == "gpt-5.5-mini":
+                    continue
                 display_name = item.get("display_name")
                 label = display_name if display_name and display_name != slug else _label(slug)
                 models.append({"id": slug, "label": label})

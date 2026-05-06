@@ -23,6 +23,12 @@ class FakeLLM:
     def memory_search_query(self, message, options=None):
         return None
 
+    def stream_complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+        yield {"type": "reasoning", "text": "planning"}
+        yield {"type": "delta", "text": "hello "}
+        yield {"type": "delta", "text": "world"}
+        yield {"type": "response_id", "response_id": "resp_stream"}
+
 
 class AgentTests(unittest.TestCase):
     def test_llm_prompt_reads_soul_file(self):
@@ -204,6 +210,19 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(result["messages"][0]["content"], "edited question")
             self.assertEqual(len(result["messages"]), 2)
             self.assertNotIn("first question", result["messages"][1]["content"])
+
+    def test_turn_stream_emits_reasoning_and_deltas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
+
+            events = list(agent.turn_stream(None, "hello"))
+            event_names = [event["event"] for event in events]
+            self.assertIn("reasoning", event_names)
+            self.assertIn("delta", event_names)
+            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(events[-1]["data"]["message"]["content"], "hello world")
 
 
 if __name__ == "__main__":

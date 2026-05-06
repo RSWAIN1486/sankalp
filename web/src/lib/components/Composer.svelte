@@ -63,7 +63,10 @@
         applyCommand(slashMatches[commandIndex].command);
         return;
       }
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        void submit();
+      }
     }}
   ></textarea>
   {#if slashMatches.length > 0}

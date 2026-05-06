@@ -33,3 +33,6 @@ pnpm-debug.log*
 
 # Logs
 .dev-logs/
+
+# files
+tmp.md
