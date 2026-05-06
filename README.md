@@ -145,6 +145,15 @@ The WebUI proxies `/api/*` to the backend at `http://127.0.0.1:8765`.
 For installed app usage, run `cd web && npm run build` once and open
 `http://127.0.0.1:8765`; the Python backend serves the built WebUI directly.
 
+For macOS local development, you can relaunch both backend and frontend in one shot:
+
+```sh
+bash scripts/relaunch_dev.sh
+```
+
+This script kills existing listeners on backend/frontend dev ports, restarts both services,
+and writes logs to `.dev-logs/backend.log` and `.dev-logs/frontend.log`.
+
 ## First Setup
 
 Open Settings from the gear icon.
@@ -203,7 +212,7 @@ Provider settings and API keys are stored locally in:
 
 Inside chat:
 
-- `remember: <fact>` appends to the memory inbox
+- `/remember <fact>` appends to the memory inbox
 - `/fetch https://example.com` fetches and extracts page text
 - `/read path/to/file` reads a file within allowed roots
 - `/append path/to/file :: text` appends text within allowed roots

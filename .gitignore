@@ -30,3 +30,6 @@ pnpm-debug.log*
 .vscode/
 *.swp
 *.swo
+
+# Logs
+.dev-logs/

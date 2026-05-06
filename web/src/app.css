@@ -727,6 +727,47 @@ button {
   color: #9c9ca3;
 }
 
+.slash-menu {
+  margin: 0 16px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #171718;
+  overflow: hidden;
+}
+
+.slash-menu button {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  background: transparent;
+  color: var(--ink);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.slash-menu button:last-child {
+  border-bottom: 0;
+}
+
+.slash-menu button:hover,
+.slash-menu button.active {
+  background: var(--panel-soft);
+}
+
+.slash-menu code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.slash-menu span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .composer-toolbar {
   min-height: 58px;
   display: flex;
@@ -817,6 +858,38 @@ button {
 .app-update-card {
   display: grid;
   gap: 10px;
+}
+
+.capability-group {
+  display: grid;
+  gap: 8px;
+}
+
+.capability-group h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.capability-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px;
+}
+
+.capability-item strong,
+.capability-item span {
+  display: block;
+}
+
+.capability-item span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .trait-list article,

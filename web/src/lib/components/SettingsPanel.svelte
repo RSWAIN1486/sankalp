@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Download, Folder, KeyRound, RotateCw, ShieldCheck, User, X } from "@lucide/svelte";
+  import { Download, Folder, KeyRound, RotateCw, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, startAppUpdate } from "$lib/stores/chat";
-  import type { Settings } from "$lib/types";
+  import type { Capabilities, Settings } from "$lib/types";
 
-  type Tab = "provider" | "memory" | "profile" | "app";
+  type Tab = "provider" | "memory" | "profile" | "app" | "capabilities";
   type Trait = { id: string; title: string; confidence: string; text: string; evidence?: string };
   type Profile = { self_profile?: string; traits?: Trait[] };
   type FolderOption = { path: string };
@@ -34,12 +34,14 @@
   let localOpenAIKey = "";
   let geminiKey = "";
   let openaiKey = "";
+  let capabilities: Capabilities = { skills: [], tools: [], commands: [] };
   $: needsVaultAccess = macosAvailable && !memoryStatus.accessible;
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "provider", label: "Provider" },
     { id: "memory", label: "Memory" },
     { id: "profile", label: "Profile" },
+    { id: "capabilities", label: "Capabilities" },
     { id: "app", label: "App" }
   ];
 
@@ -51,14 +53,15 @@
 
   async function loadAll() {
     status = "Loading...";
-    const [settingsData, profileData, foldersData, vaultData, macosData, codexData, obsidianData] = await Promise.all([
+    const [settingsData, profileData, foldersData, vaultData, macosData, codexData, obsidianData, capabilitiesData] = await Promise.all([
       api<{ settings: Settings }>("/api/settings"),
       api<{ profile: Profile }>("/api/profile"),
       api<{ folders: FolderOption[]; status: MemoryStatus }>("/api/memory/folders"),
       api<{ vaults: Vault[] }>("/api/obsidian/vaults"),
       api<{ macos: { is_macos?: boolean } }>("/api/macos/status"),
       api<{ codex: { logged_in?: boolean; login_running?: boolean } }>("/api/codex/status"),
-      api<{ obsidian: ObsidianStatus }>("/api/macos/obsidian-status")
+      api<{ obsidian: ObsidianStatus }>("/api/macos/obsidian-status"),
+      api<{ capabilities: Capabilities }>("/api/capabilities")
     ]);
     settings = settingsData.settings || {};
     profile = profileData.profile || {};
@@ -67,6 +70,7 @@
     vaults = vaultData.vaults || [];
     macosAvailable = Boolean(macosData.macos?.is_macos);
     obsidianState = obsidianData.obsidian || {};
+    capabilities = capabilitiesData.capabilities || capabilities;
     codexStatus = codexData.codex?.logged_in
       ? "Codex is logged in."
       : codexData.codex?.login_running
@@ -384,6 +388,41 @@
           </article>
         {:else}
           <p>No inferred traits yet.</p>
+        {/each}
+      </div>
+    </section>
+  {:else if $chatState.settingsTab === "capabilities"}
+    <section class="settings-section">
+      <h2><Sparkles size={16} /> Capabilities</h2>
+      <p>Use `/` in the composer to open slash-command suggestions instantly.</p>
+
+      <div class="capability-group">
+        <h3>Skills</h3>
+        {#each capabilities.skills as skill}
+          <article class="capability-item">
+            <strong>{skill.label}</strong>
+            <span>{skill.description}</span>
+          </article>
+        {/each}
+      </div>
+
+      <div class="capability-group">
+        <h3><Wrench size={14} /> Tools</h3>
+        {#each capabilities.tools as tool}
+          <article class="capability-item">
+            <strong><code>{tool.name}</code></strong>
+            <span>{tool.description}</span>
+          </article>
+        {/each}
+      </div>
+
+      <div class="capability-group">
+        <h3>Slash commands</h3>
+        {#each capabilities.commands as item}
+          <article class="capability-item">
+            <strong><code>{item.command}</code></strong>
+            <span>{item.description}</span>
+          </article>
         {/each}
       </div>
     </section>

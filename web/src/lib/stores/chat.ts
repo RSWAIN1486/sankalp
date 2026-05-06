@@ -22,7 +22,7 @@ type ChatState = {
   composerModelsByProvider: Record<string, string>;
   modelCatalog: Record<string, ModelCatalogEntry>;
   settingsOpen: boolean;
-  settingsTab: "provider" | "memory" | "profile" | "app";
+  settingsTab: "provider" | "memory" | "profile" | "app" | "capabilities";
   sidebarCollapsed: boolean;
   appUpdate: AppUpdateStatus | null;
   updateBannerDismissed: boolean;
@@ -285,11 +285,11 @@ export function toggleSettings(): void {
   chatState.update((state) => ({ ...state, settingsOpen: !state.settingsOpen }));
 }
 
-export function openSettings(tab: "provider" | "memory" | "profile" | "app" = "provider"): void {
+export function openSettings(tab: "provider" | "memory" | "profile" | "app" | "capabilities" = "provider"): void {
   chatState.update((state) => ({ ...state, settingsOpen: true, settingsTab: tab }));
 }
 
-export function setSettingsTab(tab: "provider" | "memory" | "profile" | "app"): void {
+export function setSettingsTab(tab: "provider" | "memory" | "profile" | "app" | "capabilities"): void {
   chatState.update((state) => ({ ...state, settingsTab: tab }));
 }
 

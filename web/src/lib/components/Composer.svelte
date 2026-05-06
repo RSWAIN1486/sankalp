@@ -3,8 +3,26 @@
   import { chatState, composerModelOptions, ensureProviderModels, sendMessage, setDraft, updateComposer } from "$lib/stores/chat";
 
   let sending = false;
+  let commandIndex = 0;
+  let slashQuery = "";
+  let slashVisible = false;
+  let slashMatches: Array<{ command: string; description: string }> = [];
+
+  const slashCommands = [
+    { command: "/remember ", description: "Save a fact into memory inbox" },
+    { command: "/fetch ", description: "Fetch a URL and read text" },
+    { command: "/read ", description: "Read a local file path" },
+    { command: "/append ", description: "Append text: /append path :: text" },
+    { command: "/sh ", description: "Run terminal command (if enabled)" }
+  ];
 
   $: void ensureProviderModels($chatState.composer.provider);
+  $: slashQuery = $chatState.draft.startsWith("/") ? $chatState.draft.slice(1).toLowerCase() : "";
+  $: slashVisible = $chatState.draft.startsWith("/");
+  $: slashMatches = slashVisible
+    ? slashCommands.filter((item) => item.command.slice(1).toLowerCase().startsWith(slashQuery))
+    : [];
+  $: if (commandIndex >= slashMatches.length) commandIndex = 0;
 
   async function submit() {
     if (sending || !$chatState.draft.trim()) return;
@@ -17,6 +35,10 @@
       sending = false;
     }
   }
+
+  function applyCommand(command: string) {
+    setDraft(command);
+  }
 </script>
 
 <form class="composer-panel" on:submit|preventDefault={submit}>
@@ -26,9 +48,38 @@
     rows="3"
     on:input={(event) => setDraft(event.currentTarget.value)}
     on:keydown={(event) => {
+      if (slashMatches.length > 0 && event.key === "ArrowDown") {
+        event.preventDefault();
+        commandIndex = (commandIndex + 1) % slashMatches.length;
+        return;
+      }
+      if (slashMatches.length > 0 && event.key === "ArrowUp") {
+        event.preventDefault();
+        commandIndex = (commandIndex - 1 + slashMatches.length) % slashMatches.length;
+        return;
+      }
+      if (slashMatches.length > 0 && (event.key === "Tab" || (event.key === "Enter" && !event.metaKey && !event.ctrlKey))) {
+        event.preventDefault();
+        applyCommand(slashMatches[commandIndex].command);
+        return;
+      }
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
     }}
   ></textarea>
+  {#if slashMatches.length > 0}
+    <div class="slash-menu" role="listbox" aria-label="Slash command suggestions">
+      {#each slashMatches as item, idx}
+        <button
+          class:active={idx === commandIndex}
+          type="button"
+          on:click={() => applyCommand(item.command)}
+        >
+          <code>{item.command}</code>
+          <span>{item.description}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
   <div class="composer-toolbar">
     <div class="composer-left">
       <button aria-label="Attach files" class="icon-button" type="button">

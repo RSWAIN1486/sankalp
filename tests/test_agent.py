@@ -29,7 +29,7 @@ class AgentTests(unittest.TestCase):
             memory = ObsidianMemory(root / "vault")
             agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
 
-            result = agent.turn(None, "remember: I like searchable notes")
+            result = agent.turn(None, "/remember I like searchable notes")
 
             self.assertIn("Remembered", result["message"]["content"])
             self.assertEqual(result["tool_calls"][0]["name"], "memory_remember")

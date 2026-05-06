@@ -90,3 +90,25 @@ export type StreamEvent =
   | { event: "delta"; data: { text?: string } }
   | { event: "done"; data: { session: SessionSummary; messages: ChatMessage[]; tool_calls?: ToolCall[] } }
   | { event: "error"; data: { error?: string } };
+
+export type CapabilitySkill = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export type CapabilityTool = {
+  name: string;
+  description: string;
+};
+
+export type CapabilityCommand = {
+  command: string;
+  description: string;
+};
+
+export type Capabilities = {
+  skills: CapabilitySkill[];
+  tools: CapabilityTool[];
+  commands: CapabilityCommand[];
+};

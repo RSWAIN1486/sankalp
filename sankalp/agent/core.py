@@ -66,8 +66,13 @@ class Agent:
 
     def _route_explicit_tool(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
         lowered = content.lower()
-        if lowered.startswith("remember:") or lowered.startswith("remember "):
-            text = content.split(":", 1)[1].strip() if ":" in content else content[len("remember "):].strip()
+        if lowered.startswith("/remember ") or lowered.startswith("remember:") or lowered.startswith("remember "):
+            if lowered.startswith("/remember "):
+                text = content[len("/remember "):].strip()
+            elif ":" in content:
+                text = content.split(":", 1)[1].strip()
+            else:
+                text = content[len("remember "):].strip()
             result = self.tools.call("memory_remember", text=text, source=f"session:{session.session_id}")
             session.tool_calls.append(asdict(result))
             if result.status == "ok":

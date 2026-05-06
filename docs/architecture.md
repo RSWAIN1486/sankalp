@@ -59,6 +59,9 @@ Current frontend layers:
 - `web/scripts/check-node-version.mjs`: runtime guard invoked by npm pre-scripts so local
   development/build commands fail fast with actionable guidance when Node does not satisfy
   the Vite/Svelte plugin requirement (`20.19+` or `22.12+`).
+- `scripts/relaunch_dev.sh`: macOS dev helper that kills existing backend/frontend listeners
+  on configured ports, then relaunches both local servers and records PID/log files under
+  `.dev-logs/`.
 
 The design choice is to keep the current backend stable while replacing the UI foundation.
 This avoids a combined frontend/backend rewrite and lets the professional shell prove the
@@ -170,6 +173,9 @@ profile edits and inferred traits go to `People/you.md`. Deleting a chat session
 the JSON session and matching `Sessions/YYYY-MM-DD-<session-id>.md` Obsidian transcript.
 Retrieval is lightweight keyword scoring for now.
 
+Slash memory capture is now standardized as `/remember ...` in the composer command flow.
+Legacy `remember:` phrasing is still accepted for compatibility with older transcripts.
+
 When the user explicitly asks to search, check, retrieve, or find something in memory,
 `Agent.turn` routes the request through the `memory_search` tool before any model call.
 Before searching, the configured model rewrites the user request into a concise memory
@@ -187,10 +193,15 @@ forcing a visible tool call, keeping everyday turns simple while making memory-a
 requests explicit.
 
 Tool routing is intentionally two-step. Cheap deterministic commands and regex checks run
-first for obvious intents such as `remember:` and "in my memory". If those do not select a
+first for obvious intents such as `/remember` and "in my memory". If those do not select a
 tool, the configured LLM may choose from a small safe-read catalog: `memory_search`,
 `browser_fetch`, or `file_read`. Write and terminal tools remain explicit commands because
 LLM selection is useful for wording flexibility, not for hidden side effects.
+
+Capability discovery is now explicit in the WebUI. The backend exposes `/api/capabilities`
+for a typed list of skills, tools, and slash commands. `Settings -> Capabilities` renders
+that list, while the composer shows inline slash-command suggestions when a draft begins
+with `/`, with keyboard selection and click-to-insert for fast command usage.
 
 ## Providers
 

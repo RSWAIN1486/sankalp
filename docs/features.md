@@ -49,7 +49,7 @@
 - Folders open in Finder.
 - `People/you.md` stores user-authored profile memory.
 - Agent-inferred traits are separate, low-confidence, and individually deletable.
-- `remember:` appends durable facts to the inbox.
+- `/remember` appends durable facts to the inbox.
 - Memory lookup searches the whole configured vault, skips `Sessions/`, and matches both
   note contents and folder/file names.
 - Memory lookup asks the configured model to rewrite the user request into a concise search
@@ -73,6 +73,9 @@
 Every tool call is logged into the session activity trace. Obvious commands are routed
 deterministically first. If no deterministic route matches, the configured model can choose
 from safe read/search tools before normal chat.
+
+- `Settings -> Capabilities` lists Sankalp user-facing skills, backend tools, and slash commands.
+- Typing `/` in the composer opens a slash-command picker with keyboard navigation.
 
 ## macOS App
 

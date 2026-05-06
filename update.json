@@ -1,9 +1,9 @@
 {
-  "version": "0.1.4",
+  "version": "0.1.5",
   "channel": "stable",
-  "title": "Fix Windows Obsidian setup quoting error",
+  "title": "Add slash command support",
   "notes": [
-    "Addressed path quoting issues for Obsidian vault setup on Windows"
+    "Added support for slash commands in the chat interface"
   ],
   "minimum_supported_version": "0.1.0"
 }

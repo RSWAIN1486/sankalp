@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { Database, Download, MessageSquarePlus, MoreHorizontal, PanelRight, Pencil, Search, Trash2 } from "@lucide/svelte";
+  import { Database, Download, MessageSquarePlus, MoreHorizontal, PanelRight, Pencil, Search, Sparkles, Trash2 } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import {
     chatState,
@@ -134,6 +134,11 @@
       <button type="button" on:click={() => openSettings("memory")}>
         <Database size={18} />
         <span>Memory</span>
+      </button>
+
+      <button type="button" on:click={() => openSettings("capabilities")}>
+        <Sparkles size={18} />
+        <span>Capabilities</span>
       </button>
     </nav>
 
