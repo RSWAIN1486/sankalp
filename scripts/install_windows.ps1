@@ -129,7 +129,7 @@ function Ensure-ObsidianSetup {
   Write-Info "Checking Obsidian setup"
   Push-Location $InstallDir
   try {
-    $helper = @"
+    $helper = @'
 import json
 import os
 import subprocess
@@ -162,7 +162,7 @@ if os.environ.get("SANKALP_OBSIDIAN_ONBOARD", "1") == "prompt":
     if selected:
         save_settings({"obsidian_vault_path": selected})
         print(f"Configured Obsidian vault: {selected}")
-"@
+'@
     $env:SANKALP_STATE_DIR = $StateDir
     python -c $helper
   } finally {
