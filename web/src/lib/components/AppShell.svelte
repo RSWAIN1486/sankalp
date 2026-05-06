@@ -27,7 +27,7 @@
   </section>
   {#if $chatState.settingsOpen}
     <button class="settings-backdrop" type="button" aria-label="Close settings" on:click={closeSettings}></button>
-    <div class="settings-container" on:click|stopPropagation>
+    <div class="settings-container">
       <SettingsPanel />
     </div>
   {/if}
