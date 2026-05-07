@@ -1,125 +1,67 @@
 # Sankalp Features
 
-## Chat
+This file is the minimal, user-facing feature map for the current product.
 
-- Chat sessions persist as JSON files.
-- New sessions get an immediate short fallback title, then an async global small-model title
-  update.
-- Title generation uses the smallest configured title-capable provider globally, starting
-  with OpenAI `gpt-5.4-nano`, instead of the provider/model selected for the chat message.
-- Auto-generated titles are capped to five words, and manual session renames are never
-  overwritten.
-- Sessions can be renamed or deleted from the left rail.
-- Deleting a session also deletes its matching Obsidian transcript from `Sessions/`.
-- User messages can be edited and resent; Sankalp branches from that turn and drops later
-  stale messages before generating a replacement response.
-- User messages expose copy and edit actions at the bottom-right of the bubble on hover.
-- The chat route streams status, session metadata, text chunks, and final payload events.
-- Assistant responses render lightweight Markdown: paragraphs, bullets, numbered lists,
-  links, inline code, code blocks, and headings.
+## Chat and Sessions
 
-## Composer
+- Session persistence with JSON-backed local history.
+- Streaming chat responses in WebUI (status/reasoning/content/session events).
+- Edit-and-resend branching for earlier user turns.
+- Rename, export, and delete conversations from the sidebar.
+- Async auto-title generation with global smallest-model routing; manual titles are preserved.
 
-- Attach `.md`, `.txt`, `.pdf`, and image files.
-- Text and Markdown attachments are added as text context.
-- Images and PDFs are sent inline to providers that support media inputs.
-- Select provider, model, and reasoning effort per message.
-- Last selected composer provider, model, and reasoning effort are remembered across refreshes.
-- Context usage is estimated client-side from transcript text, draft text, and attachments.
+## Composer and Inputs
+
+- Per-message provider/model/reasoning selection.
+- Provider-scoped model memory in WebUI (switching provider keeps its own model choice).
+- Attach `.md`, `.txt`, `.pdf`, and images.
+- Enter to send, Shift+Enter for newline.
+- Slash-command picker when typing `/`.
 
 ## Providers
 
-- Local fallback works with no model key.
-- OpenAI-compatible endpoint supports local or hosted `/v1/chat/completions` runtimes.
-- Codex CLI uses local `codex login` and `codex exec`.
-- Gemini API uses a saved Gemini key or `GEMINI_API_KEY`.
-- OpenAI API uses a saved OpenAI key or `OPENAI_API_KEY`.
-- Settings show only fields relevant to the selected provider.
-- Model dropdowns load from live provider APIs/CLI when available and fall back to curated
-  defaults.
-- `Test hello` verifies the selected provider/model/key/endpoint without creating a chat
-  session.
+- Built-in providers: `local`, `local_openai`, `codex`, `gemini`, `openai`.
+- Provider settings are local-first and persisted in `~/.sankalp/settings.json`.
+- `/api/models?provider=...` model loading with runtime fallback behavior.
+- `Test hello` connection check without creating a chat session.
 
 ## Memory
 
-- Obsidian-compatible Markdown vault.
-- Configurable vault path and optional workspace subfolder.
-- Recent note list, top-level workspace dropdown, folder cards, and recursive note preview.
-- Notes can open directly in Obsidian.
-- Folders open in Finder.
-- `People/you.md` stores user-authored profile memory.
-- Agent-inferred traits are separate, low-confidence, and individually deletable.
-- `/remember` appends durable facts to the inbox.
-- Natural save/document requests save generated findings to Obsidian, and combined
-  research+save prompts store the generated answer rather than the raw user request.
-- Memory lookup searches the whole configured vault, skips `Sessions/`, and matches both
-  note contents and folder/file names.
-- Memory lookup asks the configured model to rewrite the user request into a concise search
-  query before searching, then logs both the rewritten and original query.
-- Memory lookup response style follows the query: existence checks return yes/no plus
-  source paths and a follow-up prompt; specific questions are answered from the notes.
-- Memory lookup filters weak matches before model answering, and local OpenAI-compatible
-  grounded answers use deterministic output to reduce drift.
-- Assistant messages that mention Obsidian `.md` note paths show open-note controls that
-  launch the note through the same Obsidian open endpoint used by the Memory tab.
+- Obsidian-compatible Markdown vault integration.
+- `/remember` for durable memory capture.
+- Natural-language save/document intents routed to memory capture.
+- Explicit memory find/check intents routed to `memory_search` first.
+- Session deletion also removes matching Obsidian session transcript.
 
-## Tools
+## Tools and Research
 
-- `memory_remember`
-- `memory_search`
-- `browser_fetch`
-- `browser_search`
-- `file_read`
-- `file_append`
-- `terminal`, disabled by default
+- Core tools include memory, web fetch/search, file read/append, and optional terminal.
+- Tool calls are logged in session activity for auditability.
+- `/research <query>` for web discovery + synthesis with source links.
+- `/fetch <url>` for readable-content extraction with provider-aware fallback.
 
-Every tool call is logged into the session activity trace. Obvious commands are routed
-deterministically first. If no deterministic route matches, the configured model can choose
-from safe read/search tools before normal chat.
+## Skills and Capabilities
 
-- `Settings -> Capabilities` lists Sankalp folder-backed skills, backend tools, and slash commands.
-- Typing `/` in the composer opens a slash-command picker with keyboard navigation.
+- Folder-backed skills under `~/.sankalp/skills`.
+- Bundled default skills are seeded only when missing.
+- `Settings -> Capabilities` lists features, skills, tools, and slash commands.
 
-## Web Research
+## Installed App Experience
 
-- `/research <query>` runs web discovery, content extraction, and LLM synthesis.
-- Search provider order is Firecrawl self-hosted URL, Firecrawl cloud API key, SearXNG URL,
-  then DuckDuckGo fallback.
-- Firecrawl search requests markdown content in the search response when available.
-- SearXNG and DuckDuckGo results are enriched by fetching readable page text from top URLs.
-- `/fetch <url>` prefers Firecrawl scraping when configured, then falls back to plain
-  readable-text extraction.
+- macOS and Windows one-command installer flows.
+- Managed app checkout under `~/.sankalp/app`; user data remains separate and durable.
+- Single local origin for built WebUI + backend API.
+- In-app update checks and confirmed update/relaunch via release manifest (`update.json`).
+- App controls include restart and quit local app.
 
-## Skills
+## Architecture Diagram
 
-- Skills are installed under `~/.sankalp/skills`.
-- Each skill is a folder with `skill.json`, `DESCRIPTION.md`, and `SKILL.md`.
-- Optional skill files include `setup.md`, `scripts/`, `examples/`, and `assets/`.
-- Startup seeds bundled skills, including `note-taking/obsidian` and `research/web-research`,
-  when they are missing.
-
-## macOS App
-
-- One-command curl installer clones or updates Sankalp, builds the WebUI, installs
-  `~/Applications/Sankalp.app`, and opens it.
-- Installed app mode serves the built WebUI and backend API from one local loopback port.
-- The installer and app wrapper free the configured Sankalp port before starting when needed.
-- Installs a lightweight `~/Applications/Sankalp.app` wrapper.
-- Opens the Full Disk Access settings pane.
-- Checks a stable GitHub update manifest, shows update availability in the main UI, and
-  installs updates only after user confirmation.
-
-## Windows App
-
-- One-command PowerShell installer clones or updates Sankalp under
-  `%USERPROFILE%\.sankalp\app`, builds the WebUI, creates a Start Menu shortcut, and opens
-  Sankalp.
-- Managed app checkout reset semantics match macOS for safe reinstall/update.
-- Reinstall migrates legacy `%LOCALAPPDATA%\Sankalp\app` and `%USERPROFILE%\sankalp`
-  installs into the `~/.sankalp` agent-home layout when possible.
-- Obsidian onboarding checks install status and opens the official download page when needed.
-- Obsidian vault path is auto-detected from Obsidian registry when accessible.
-- Optional vault-picker prompt is supported during install with
-  `SANKALP_OBSIDIAN_ONBOARD=prompt`.
-- In-app update action now dispatches to the platform installer (macOS or Windows).
-- App controls include Restart and Quit; Quit shuts down the local server and asks the browser tab to close.
+```mermaid
+flowchart LR
+  UI[WebUI] --> API["/api/*"]
+  API --> AGENT[Agent + Providers]
+  AGENT --> MEM[Obsidian Memory]
+  AGENT --> SESS[Session Store]
+  AGENT --> TOOLS[Tools/Research]
+  UI --> PREFS[Dexie UI State]
+```
