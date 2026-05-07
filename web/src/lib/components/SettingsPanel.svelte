@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Download, Folder, KeyRound, RotateCw, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
+  import { Download, Folder, KeyRound, RotateCw, Search, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, setStreamDiagnosticsEnabled, startAppUpdate } from "$lib/stores/chat";
   import type { Capabilities, Settings } from "$lib/types";
 
-  type Tab = "provider" | "memory" | "profile" | "app" | "capabilities";
+  type Tab = "provider" | "research" | "memory" | "profile" | "app" | "capabilities";
   type Trait = { id: string; title: string; confidence: string; text: string; evidence?: string };
   type Profile = { self_profile?: string; traits?: Trait[] };
   type FolderOption = { path: string };
@@ -34,11 +34,13 @@
   let localOpenAIKey = "";
   let geminiKey = "";
   let openaiKey = "";
+  let firecrawlKey = "";
   let capabilities: Capabilities = { skills: [], tools: [], commands: [] };
   $: needsVaultAccess = macosAvailable && !memoryStatus.accessible;
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "provider", label: "Provider" },
+    { id: "research", label: "Research" },
     { id: "memory", label: "Memory" },
     { id: "profile", label: "Profile" },
     { id: "capabilities", label: "Capabilities" },
@@ -91,13 +93,15 @@
         ...settings,
         local_openai_api_key: localOpenAIKey,
         gemini_api_key: geminiKey,
-        openai_api_key: openaiKey
+        openai_api_key: openaiKey,
+        firecrawl_api_key: firecrawlKey
       })
     });
     settings = data.settings || {};
     localOpenAIKey = "";
     geminiKey = "";
     openaiKey = "";
+    firecrawlKey = "";
     refreshSettings(settings);
     void Promise.all(["local_openai", "codex", "gemini", "openai"].map((item) => ensureProviderModels(item, true)));
     status = "Saved";
@@ -332,6 +336,17 @@
         <p>Events: status {diagnostics.events.status || 0}, reasoning {diagnostics.events.reasoning || 0}, delta {diagnostics.events.delta || 0}, done {diagnostics.events.done || 0}, error {diagnostics.events.error || 0}</p>
         <p>Chars: output {diagnostics.chars.delta}, thinking {diagnostics.chars.reasoning}</p>
       {/if}
+    </section>
+  {:else if $chatState.settingsTab === "research"}
+    <section class="settings-section">
+      <h2><Search size={16} /> Research</h2>
+      <label>Firecrawl self-hosted URL <input bind:value={settings.firecrawl_base_url} placeholder="http://localhost:3002" /></label>
+      <label>Firecrawl API key <input bind:value={firecrawlKey} placeholder={settings.has_firecrawl_api_key ? "Firecrawl key saved" : "Optional cloud key"} type="password" /></label>
+      <label>SearXNG URL <input bind:value={settings.searxng_base_url} placeholder="http://localhost:8080" /></label>
+      <div class="settings-actions">
+        <button type="button" on:click={saveProvider}>Save research</button>
+      </div>
+      <p>Provider order: Firecrawl URL, Firecrawl cloud key, SearXNG, DuckDuckGo fallback.</p>
     </section>
   {:else if $chatState.settingsTab === "memory"}
     <section class="settings-section">

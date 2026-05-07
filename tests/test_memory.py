@@ -13,12 +13,21 @@ class MemoryTests(unittest.TestCase):
             memory = ObsidianMemory(vault)
             path = memory.capture("The user prefers append-first memory.", source="test")
 
-            self.assertEqual(path.parent.parent.name, "Projects")
+            self.assertEqual(path.parent.name, "Append First")
             self.assertIn("append-first", path.read_text(encoding="utf-8"))
 
             hits = memory.retrieve("append first memory")
             self.assertTrue(hits)
             self.assertEqual(hits[0].path, str(path.resolve().relative_to(Path(tmp).resolve())))
+
+    def test_capture_creates_topic_folder_instead_of_inbox_when_no_folder_fits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = ObsidianMemory(Path(tmp))
+
+            path = memory.capture("# Sourdough Starter Feeding Schedule\n\nWeekly maintenance notes.", source="test")
+
+            self.assertEqual(str(path.parent.resolve().relative_to(Path(tmp).resolve())), "Sourdough Starter Feeding Schedule")
+            self.assertFalse((Path(tmp) / "Inbox" / "sourdough-starter-feeding-schedule.md").exists())
 
     def test_capture_uses_explicit_folder_and_note(self):
         with tempfile.TemporaryDirectory() as tmp:

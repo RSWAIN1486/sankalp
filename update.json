@@ -1,9 +1,9 @@
 {
-  "version": "0.1.8",
+  "version": "0.1.9",
   "channel": "stable",
-  "title": "Live streaming",
+  "title": "Web Research Tool Integration",
   "notes": [
-    "Live streaming would show for model providers whereever supported."
+    "Implemented web research tool with Firecrawl integration and refined Obsidian folder classification logic"
   ],
   "minimum_supported_version": "0.1.0"
 }

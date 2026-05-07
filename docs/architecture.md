@@ -234,9 +234,17 @@ Natural-language save intents like "document this in my obsidian" are also route
 `memory_remember`, using the previous assistant message when the user references "this/that/above".
 Save-target selection is now hybrid: the configured LLM can choose folder and note name from
 the current vault folder/note map, and deterministic sanitization/fallback still guarantees
-safe local writes even when no model suggestion is available.
+safe local writes even when no model suggestion is available. The deterministic pass also
+guards against weak LLM routing by preferring semantically matching existing folders over
+`Inbox`; for example, source-backed paper and literature notes prefer an existing `Research`
+folder. When no existing folder semantically fits, Sankalp creates a concise new top-level
+folder from the note topic instead of falling back to `Inbox`.
 For combined prompts ("find/research ... and document/save"), Sankalp now defers saving until
-after the answer is generated, then stores the produced findings instead of the raw user prompt.
+after the answer is generated, then stores the produced findings instead of the raw user
+prompt. When the chat answer contains an explicit "Obsidian Note Draft" fenced Markdown block,
+only that Markdown block is written to the vault, so conversational explanation, duplicate
+source sections, provider metadata, and save confirmations stay in the session transcript
+rather than the promoted note.
 
 When the user explicitly asks to search, check, retrieve, or find something in memory,
 `Agent.turn` routes the request through the `memory_search` tool before any model call.
@@ -261,9 +269,12 @@ tool, the configured LLM may choose from a small safe-read catalog: `memory_sear
 LLM selection is useful for wording flexibility, not for hidden side effects.
 
 Web research is now a first-class skill path. `/research <query>` uses `browser_search` to
-discover sources; follow-up `/fetch <url>` can extract article text for deeper synthesis.
-Combined prompts like "find latest ... and document it" now generate the answer first and
-then save findings to memory.
+discover sources, extract readable page content, and ask the selected chat model to synthesize
+findings with source links. The provider order is Firecrawl self-hosted URL, Firecrawl cloud
+API key, SearXNG URL, then DuckDuckGo fallback. Firecrawl search uses `/v2/search` with
+markdown scrape options when available; `/fetch <url>` uses Firecrawl scrape before falling
+back to local readable-text extraction. Combined prompts like "find latest ... and document it"
+generate the answer first and then save findings to memory.
 
 Capability discovery is explicit in the WebUI. The backend exposes `/api/capabilities`
 for a typed list of features, folder-backed skills, tools, and slash commands.
@@ -277,6 +288,11 @@ Settings store provider configuration locally in `~/.sankalp/settings.json`, wit
 masked from normal reads. In the `web/` UI, browser-local UI state lives in Dexie/IndexedDB
 so drafts, cached sessions, attachment metadata, and preferences can share one local storage
 layer.
+
+Research settings are stored in the same local settings file. `firecrawl_base_url` points to
+a self-hosted Firecrawl-compatible server, `firecrawl_api_key` is masked like model provider
+keys, and `searxng_base_url` points to an optional SearXNG instance.
+Operational setup notes live in `docs/WEB_RESEARCH.md`.
 
 Native providers today:
 

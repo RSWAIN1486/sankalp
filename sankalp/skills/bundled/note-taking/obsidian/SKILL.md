@@ -5,7 +5,9 @@ Use Sankalp's configured Obsidian vault as the human-readable long-term memory l
 ## Behavior
 
 - Save explicit durable facts with `/remember <fact>`.
-- `/remember` now routes to the best matching folder/note in the vault and creates missing folders/notes when needed.
+- `/remember` and natural save requests route to the best matching folder/note in the vault and create missing folders/notes when needed.
+- Prefer existing semantic folders over `Inbox`; when no existing folder fits, create a concise new top-level folder under the vault.
+- Save the durable note body only. Do not save conversational wrappers, tool/provider metadata, or "ready-to-paste" draft framing.
 - Optional explicit routing syntax:
   - `folder: Research/JEPA`
   - `note: V-JEPA-reading-notes.md`

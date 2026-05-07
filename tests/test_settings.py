@@ -69,6 +69,27 @@ class SettingsTests(unittest.TestCase):
             self.assertNotIn("local_openai_api_key", public)
             self.assertEqual(private["local_openai_api_key"], "secret")
 
+    def test_saves_research_settings_and_masks_firecrawl_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_path = settings_module.SETTINGS_PATH
+            settings_module.SETTINGS_PATH = Path(tmp) / "settings.json"
+            try:
+                save_settings({
+                    "firecrawl_base_url": "http://localhost:3002",
+                    "firecrawl_api_key": "fc-secret",
+                    "searxng_base_url": "http://localhost:8080",
+                })
+                public = load_settings()
+                private = load_settings(include_secrets=True)
+            finally:
+                settings_module.SETTINGS_PATH = old_path
+
+            self.assertEqual(public["firecrawl_base_url"], "http://localhost:3002")
+            self.assertEqual(public["searxng_base_url"], "http://localhost:8080")
+            self.assertTrue(public["has_firecrawl_api_key"])
+            self.assertNotIn("firecrawl_api_key", public)
+            self.assertEqual(private["firecrawl_api_key"], "fc-secret")
+
 
 if __name__ == "__main__":
     unittest.main()

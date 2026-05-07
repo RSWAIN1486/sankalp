@@ -50,6 +50,8 @@
 - `People/you.md` stores user-authored profile memory.
 - Agent-inferred traits are separate, low-confidence, and individually deletable.
 - `/remember` appends durable facts to the inbox.
+- Natural save/document requests save generated findings to Obsidian, and combined
+  research+save prompts store the generated answer rather than the raw user request.
 - Memory lookup searches the whole configured vault, skips `Sessions/`, and matches both
   note contents and folder/file names.
 - Memory lookup asks the configured model to rewrite the user request into a concise search
@@ -66,6 +68,7 @@
 - `memory_remember`
 - `memory_search`
 - `browser_fetch`
+- `browser_search`
 - `file_read`
 - `file_append`
 - `terminal`, disabled by default
@@ -77,12 +80,23 @@ from safe read/search tools before normal chat.
 - `Settings -> Capabilities` lists Sankalp folder-backed skills, backend tools, and slash commands.
 - Typing `/` in the composer opens a slash-command picker with keyboard navigation.
 
+## Web Research
+
+- `/research <query>` runs web discovery, content extraction, and LLM synthesis.
+- Search provider order is Firecrawl self-hosted URL, Firecrawl cloud API key, SearXNG URL,
+  then DuckDuckGo fallback.
+- Firecrawl search requests markdown content in the search response when available.
+- SearXNG and DuckDuckGo results are enriched by fetching readable page text from top URLs.
+- `/fetch <url>` prefers Firecrawl scraping when configured, then falls back to plain
+  readable-text extraction.
+
 ## Skills
 
 - Skills are installed under `~/.sankalp/skills`.
 - Each skill is a folder with `skill.json`, `DESCRIPTION.md`, and `SKILL.md`.
 - Optional skill files include `setup.md`, `scripts/`, `examples/`, and `assets/`.
-- Startup seeds the bundled `note-taking/obsidian` skill when it is missing.
+- Startup seeds bundled skills, including `note-taking/obsidian` and `research/web-research`,
+  when they are missing.
 
 ## macOS App
 

@@ -529,13 +529,15 @@ class ObsidianMemory:
     def _best_folder_for_text(self, text: str) -> str:
         terms = self._query_terms(text)
         if not terms:
-            return "Inbox"
+            return "Notes"
         folders = self.folders()
-        best_path = "Inbox"
+        best_path = ""
         best_score = 0
         for item in folders:
             folder_path = item.get("path") or ""
             if not folder_path:
+                continue
+            if folder_path.split("/")[0].lower() in {"inbox", "sessions"}:
                 continue
             score = self._match_score(folder_path, terms)
             if score > best_score:
@@ -543,19 +545,30 @@ class ObsidianMemory:
                 best_path = folder_path
         if best_score > 0:
             return best_path
-        topic = self._topic_slug(text)
-        if topic:
-            return f"Projects/{topic}"
-        return "Inbox"
+        return self._topic_folder(text, terms)
 
-    def _topic_slug(self, text: str) -> str:
-        words = [w.lower() for w in re.findall(r"[A-Za-z0-9]{3,}", text)]
-        stop = {"this", "that", "with", "from", "into", "about", "please", "save", "remember", "document", "obsidian", "vault"}
-        filtered = [w for w in words if w not in stop]
+    def _topic_folder(self, text: str, terms: set[str] | None = None) -> str:
+        terms = terms or self._query_terms(text)
+        research_terms = {
+            "arxiv", "citation", "citations", "literature", "paper", "papers", "publication",
+            "publications", "research", "sources", "study", "studies", "survey",
+        }
+        if terms.intersection(research_terms):
+            return "Research"
+        heading = re.search(r"^\s*#\s+(.+)$", text, flags=re.M)
+        source = heading.group(1) if heading else text
+        source = re.sub(r"\b(latest|recent|summary|notes?|findings|details?|overview)\b", " ", source, flags=re.I)
+        words = [w for w in re.findall(r"[A-Za-z0-9]{3,}", source)]
+        stop = {
+            "this", "that", "with", "from", "into", "about", "please", "save", "remember",
+            "document", "obsidian", "vault", "sources", "the", "user", "users", "memory",
+            "prefers", "prefer",
+        }
+        filtered = [w for w in words if w.lower() not in stop]
         if not filtered:
-            return ""
-        topic = "-".join(filtered[:3])
-        return topic[:60].strip("-")
+            return "Notes"
+        topic = " ".join(filtered[:4]).strip().title()
+        return topic[:60].strip() or "Notes"
 
     def _infer_note_name(self, text: str) -> str:
         heading = re.search(r"^\s*#\s+(.+)$", text, flags=re.M)

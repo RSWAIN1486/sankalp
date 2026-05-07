@@ -44,7 +44,7 @@ class Agent:
         if routed is not None:
             answer = routed
         else:
-            selected = self._route_llm_selected_tool(session, content, options)
+            selected = self._run_web_research(session, content, options) if self._is_web_research_request(content.lower()) else self._route_llm_selected_tool(session, content, options)
             if selected is not None:
                 answer = selected
             else:
@@ -97,9 +97,13 @@ class Agent:
             yield {"event": "status", "data": {"label": "Done", "detail": "Handled by built-in tool"}}
             yield {"event": "delta", "data": {"text": answer}}
         else:
-            selected = self._route_llm_selected_tool(session, content, options)
+            selected = self._run_web_research(session, content, options) if self._is_web_research_request(content.lower()) else self._route_llm_selected_tool(session, content, options)
             if selected is not None:
                 answer = selected
+                if auto_save_after_answer and answer and not answer.startswith("I hit an LLM adapter error:"):
+                    save_result = self._save_answer_to_memory(session, content, answer, options)
+                    if save_result:
+                        answer += f"\n\n{save_result}"
                 yield {"event": "status", "data": {"label": "Done", "detail": "Handled by selected tool"}}
                 yield {"event": "delta", "data": {"text": answer}}
             else:
@@ -207,11 +211,7 @@ class Agent:
 
         if lowered.startswith("/research "):
             query = content[len("/research "):].strip()
-            result = self.tools.call("browser_search", query=query, limit=6)
-            session.tool_calls.append(asdict(result))
-            if result.status != "ok":
-                return f"Research failed: {result.output}"
-            return self._format_browser_search(query, result.output)
+            return self._run_web_research(session, query, options)
 
         if lowered.startswith("/read "):
             path = content[len("/read "):].strip()
@@ -272,11 +272,29 @@ class Agent:
         ])
         return wants_save and research_like
 
+    def _is_web_research_request(self, lowered: str) -> bool:
+        if lowered.startswith(("/research ", "/fetch ", "/read ", "/remember ", "/append ", "/sh ")):
+            return False
+        if "memory" in lowered or "obsidian" in lowered and not any(term in lowered for term in ["find", "research", "latest", "papers"]):
+            return False
+        return bool(
+            re.search(r"\b(find|research|look up|search)\b.*\b(latest|web|online|papers?|sources?|news|details?)\b", lowered)
+            or re.search(r"\b(latest|recent)\b.*\b(papers?|news|sources?|research)\b", lowered)
+        )
+
+    def _run_web_research(self, session: Session, query: str, options: dict[str, Any]) -> str:
+        result = self.tools.call("browser_search", query=query, limit=6, include_content=True)
+        session.tool_calls.append(asdict(result))
+        if result.status != "ok":
+            return f"Research failed: {result.output}"
+        return self._answer_web_research(query, result.output, options)
+
     def _save_answer_to_memory(self, session: Session, request_text: str, answer_text: str, options: dict[str, Any]) -> str | None:
-        target = self._memory_save_target(request_text, answer_text, options)
+        note_text = self._memory_note_content_for_save(answer_text)
+        target = self._memory_save_target(request_text, note_text, options)
         result = self.tools.call(
             "memory_remember",
-            text=answer_text,
+            text=note_text,
             source=f"session:{session.session_id}",
             folder=target.get("folder"),
             note=target.get("note"),
@@ -288,18 +306,156 @@ class Agent:
         return f"Saved to Obsidian at `{target_path}`."
 
     def _memory_save_target(self, request_text: str, content_text: str, options: dict[str, Any]) -> dict[str, str]:
-        default = {"folder": "", "note": ""}
+        explicit = self._explicit_memory_target(request_text) or self._explicit_memory_target(content_text)
+        if explicit:
+            return explicit
         folders = self.memory.folder_paths(max_depth=5)
         note_paths = [item.get("path", "") for item in self.memory.notes(limit=120).get("notes", []) if item.get("path")]
+        deterministic_folder = self._deterministic_memory_folder(f"{request_text}\n\n{content_text}", folders)
+        deterministic_note = self._deterministic_memory_note(request_text, content_text)
+        target = {"folder": deterministic_folder, "note": deterministic_note}
         chooser = getattr(self.llm, "memory_save_target", None)
         if callable(chooser):
             suggestion = chooser(request_text, content_text, folders, note_paths, options)
             if isinstance(suggestion, dict):
                 folder = str(suggestion.get("folder") or "").strip()
                 note = str(suggestion.get("note") or "").strip()
-                if folder and note:
-                    return {"folder": folder, "note": note}
-        return default
+                if folder and folder.lower().strip("/") not in {"inbox", "sessions"}:
+                    target["folder"] = folder
+                if note:
+                    target["note"] = note
+        return target
+
+    def _memory_note_content_for_save(self, answer_text: str) -> str:
+        text = (answer_text or "").strip()
+        if not text:
+            return text
+        draft = self._extract_obsidian_note_draft(text)
+        if draft:
+            return draft
+        text = re.sub(r"\n*Research provider:\s*`[^`]+`\s*$", "", text, flags=re.I).strip()
+        text = re.sub(r"\n*Saved to Obsidian at\s+`[^`]+`\.\s*$", "", text, flags=re.I).strip()
+        return text
+
+    def _extract_obsidian_note_draft(self, text: str) -> str:
+        marker = re.search(r"obsidian\s+note\s+draft", text, flags=re.I)
+        if marker:
+            tail = text[marker.end():]
+            fenced = re.search(r"```(?:markdown|md)?\s*\n(.*?)\n```", tail, flags=re.I | re.S)
+            if fenced:
+                return fenced.group(1).strip()
+        fenced_blocks = re.findall(r"```(?:markdown|md)\s*\n(.*?)\n```", text, flags=re.I | re.S)
+        if len(fenced_blocks) == 1:
+            block = fenced_blocks[0].strip()
+            if block.startswith("#"):
+                return block
+        return ""
+
+    def _explicit_memory_target(self, text: str) -> dict[str, str] | None:
+        folder_match = re.search(r"(?:^|\n)\s*(?:folder|path)\s*:\s*(.+)\s*$", text, flags=re.I | re.M)
+        note_match = re.search(r"(?:^|\n)\s*(?:note|file|title)\s*:\s*(.+)\s*$", text, flags=re.I | re.M)
+        folder = folder_match.group(1).strip() if folder_match else ""
+        note = note_match.group(1).strip() if note_match else ""
+        if folder or note:
+            return {"folder": folder or "", "note": note or self._deterministic_memory_note(text, text)}
+        return None
+
+    def _deterministic_memory_folder(self, text: str, folders: list[str]) -> str:
+        candidates = [item.strip().strip("/") for item in folders if item and item.strip().strip("/")]
+        candidates = [item for item in candidates if item.split("/")[0].lower() not in {"inbox", "sessions"}]
+        terms = self._memory_route_terms(text)
+        if not terms:
+            return "Notes"
+        best_folder = ""
+        best_score = 0
+        for folder in candidates:
+            score = self._folder_route_score(folder, terms)
+            if score > best_score or (score == best_score and best_folder and len(folder) < len(best_folder)):
+                best_folder = folder
+                best_score = score
+        return best_folder if best_score > 0 else self._deterministic_new_memory_folder(text, terms)
+
+    def _deterministic_new_memory_folder(self, text: str, terms: set[str]) -> str:
+        research_terms = {
+            "arxiv", "citation", "citations", "literature", "paper", "papers", "publication",
+            "publications", "research", "sources", "study", "studies", "survey",
+        }
+        if terms.intersection(research_terms):
+            return "Research"
+        heading = re.search(r"^\s*#\s+(.+)$", text, flags=re.M)
+        source = heading.group(1) if heading else text
+        source = re.sub(r"\b(latest|recent|summary|notes?|findings|details?|overview)\b", " ", source, flags=re.I)
+        source = re.sub(r"\b(and|then)\s+(save|document|store|remember)\b.*$", "", source, flags=re.I)
+        words = [
+            word
+            for word in re.findall(r"[A-Za-z0-9]+", source)
+            if word.lower() not in {
+                "save", "document", "remember", "obsidian", "vault", "please", "sources",
+                "the", "user", "users", "memory", "prefers", "prefer",
+            }
+        ][:4]
+        if not words:
+            return "Notes"
+        return " ".join(words).strip().title()
+
+    def _folder_route_score(self, folder: str, terms: set[str]) -> int:
+        lower = folder.lower()
+        parts = [part.lower() for part in folder.split("/")]
+        score = 0
+        for term in terms:
+            if term in parts:
+                score += 8
+            elif term in lower:
+                score += 3
+        research_terms = {
+            "arxiv", "citation", "citations", "literature", "paper", "papers", "publication",
+            "publications", "research", "sources", "study", "studies", "survey",
+        }
+        if "research" in parts and terms.intersection(research_terms):
+            score += 6
+        project_terms = {"project", "projects", "build", "implementation", "roadmap", "milestone"}
+        if "projects" in parts and terms.intersection(project_terms):
+            score += 4
+        skill_terms = {"skill", "skills", "workflow", "instructions", "tool", "tools"}
+        if "skills" in parts and terms.intersection(skill_terms):
+            score += 4
+        decision_terms = {"decision", "decisions", "choose", "chosen", "tradeoff", "architecture"}
+        if "decisions" in parts and terms.intersection(decision_terms):
+            score += 4
+        return score
+
+    def _memory_route_terms(self, text: str) -> set[str]:
+        stopwords = {
+            "about", "above", "after", "also", "and", "answer", "assistant", "can", "could",
+            "details", "document", "find", "from", "into", "latest", "memory", "note", "notes",
+            "obsidian", "please", "provided", "request", "save", "saved", "source", "that", "the",
+            "them", "this", "those", "user", "vault", "with", "would", "you",
+        }
+        return {
+            term.lower()
+            for term in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", text)
+            if term.lower() not in stopwords
+        }
+
+    def _deterministic_memory_note(self, request_text: str, content_text: str) -> str:
+        heading = re.search(r"^\s*#\s+(.+)$", content_text, flags=re.M)
+        if heading:
+            return f"{self._slug(heading.group(1))}.md"
+        title_source = request_text or content_text
+        title_source = re.sub(r"\b(in|into)\s+my\s+(obsidian|vault|notes?)\b", "", title_source, flags=re.I)
+        title_source = re.sub(
+            r"^\s*(can you|could you|please|pls|would you|find|look up|search|research|save|document|remember)\b[:\s-]*",
+            "",
+            title_source,
+            flags=re.I,
+        )
+        title_source = re.sub(r"\b(and|then)\s+(save|document|store|remember)\b.*$", "", title_source, flags=re.I)
+        words = re.findall(r"[A-Za-z0-9]+", title_source)[:8]
+        return f"{self._slug(' '.join(words) or 'note')}.md"
+
+    def _slug(self, value: str) -> str:
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").lower()
+        return slug or "note"
 
     def _route_llm_selected_tool(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
         if not hasattr(self.llm, "select_tool"):
@@ -330,11 +486,11 @@ class Agent:
         if tool == "browser_search":
             query = str(arguments.get("query") or content).strip()
             limit = int(arguments.get("limit") or 6)
-            result = self.tools.call("browser_search", query=query, limit=limit)
+            result = self.tools.call("browser_search", query=query, limit=limit, include_content=True)
             session.tool_calls.append(asdict(result))
             if result.status != "ok":
                 return f"Research failed: {result.output}"
-            return self._format_browser_search(query, result.output)
+            return self._answer_web_research(query, result.output, options)
         if tool == "file_read":
             path = str(arguments.get("path") or "").strip()
             if not path:
@@ -387,6 +543,42 @@ class Agent:
             url = str(item.get("url") or "").strip()
             lines.append(f"{index}. {title} - {url}")
         return "\n".join(lines)
+
+    def _answer_web_research(self, query: str, output: dict[str, Any], options: dict[str, Any]) -> str:
+        results = output.get("results") or []
+        if not results:
+            return self._format_browser_search(query, output)
+        source_context = self._web_research_context(output)
+        prompt = (
+            "Synthesize a web research answer using only the provided source material.\n"
+            "Rules:\n"
+            "- Start with the direct answer or findings.\n"
+            "- Cite sources inline using [1], [2], etc. where relevant.\n"
+            "- Include a short Sources section with title and URL.\n"
+            "- If source content is thin, say what could be verified from titles/snippets only.\n"
+            "- Do not invent publication dates, claims, or paper details not present in the sources.\n\n"
+            f"User research request: {query}"
+        )
+        try:
+            result = self.llm.complete([{"role": "user", "content": prompt}], source_context, None, options)
+            answer = str(result.get("text") or "").strip()
+            if answer:
+                engine = output.get("engine") or "web"
+                return f"{answer}\n\nResearch provider: `{engine}`"
+        except Exception:
+            pass
+        return self._format_browser_search(query, output)
+
+    def _web_research_context(self, output: dict[str, Any]) -> str:
+        chunks = []
+        for index, item in enumerate((output.get("results") or [])[:6], start=1):
+            title = str(item.get("title") or "Untitled").strip()
+            url = str(item.get("url") or "").strip()
+            description = str(item.get("description") or "").strip()
+            markdown = str(item.get("markdown") or "").strip()
+            body = markdown or description or "(No extracted content available.)"
+            chunks.append(f"[{index}] {title}\nURL: {url}\nSnippet: {description}\nContent:\n{body[:3500]}")
+        return "\n\n".join(chunks)
 
     def _is_memory_lookup_request(self, lowered: str) -> bool:
         if any(phrase in lowered for phrase in ["in my memory", "from my memory", "from memory", "search memory", "check memory"]):

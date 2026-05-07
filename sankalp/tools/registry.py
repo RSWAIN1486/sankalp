@@ -1,43 +1,17 @@
 from __future__ import annotations
 
-import html
-import json
-import re
 import shlex
 import subprocess
 import time
-import urllib.request
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from sankalp.config import ALLOW_TERMINAL, allowed_roots
 from sankalp.memory import ObsidianMemory
+from sankalp.settings import load_settings
 
 from .base import ToolResult
-
-
-class TextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-        self._skip = False
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "noscript"}:
-            self._skip = True
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript"}:
-            self._skip = False
-
-    def handle_data(self, data: str) -> None:
-        if not self._skip and data.strip():
-            self.parts.append(data.strip())
-
-    def text(self) -> str:
-        return html.unescape("\n".join(self.parts))
+from .web_research import WebResearchClient
 
 
 class ToolRegistry:
@@ -92,37 +66,25 @@ class ToolRegistry:
         if not url.startswith(("http://", "https://")):
             return ToolResult.run("browser_fetch", {"url": url}, {"error": "URL must start with http:// or https://"}, "error", started)
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "Sankalp/0.1"})
-            with urllib.request.urlopen(request, timeout=12) as response:
-                body = response.read(1_000_000)
-                content_type = response.headers.get("content-type", "")
-            raw = body.decode("utf-8", errors="replace")
-            if "html" in content_type.lower():
-                parser = TextExtractor()
-                parser.feed(raw)
-                text = parser.text()
-            else:
-                text = raw
-            return ToolResult.run("browser_fetch", {"url": url}, {"content_type": content_type, "text": text[:12000]}, started_at=started)
+            result = WebResearchClient(load_settings(include_secrets=True)).fetch(url)
+            return ToolResult.run("browser_fetch", {"url": url}, result, started_at=started)
         except Exception as exc:
             return ToolResult.run("browser_fetch", {"url": url}, {"error": str(exc)}, "error", started)
 
-    def browser_search(self, query: str, limit: int = 5) -> ToolResult:
+    def browser_search(self, query: str, limit: int = 5, include_content: bool = True) -> ToolResult:
         started = time.time()
         q = (query or "").strip()
         if not q:
             return ToolResult.run("browser_search", {"query": query, "limit": limit}, {"error": "query is empty"}, "error", started)
         limit = max(1, min(int(limit or 5), 10))
-        url = f"https://duckduckgo.com/html/?q={quote(q)}"
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "Sankalp/0.1"})
-            with urllib.request.urlopen(request, timeout=15) as response:
-                raw = response.read(1_500_000).decode("utf-8", errors="replace")
-            results = self._parse_duckduckgo_results(raw, limit=limit)
+            output = WebResearchClient(load_settings(include_secrets=True)).search(q, limit=limit, include_content=include_content)
+            status = "ok" if output.get("results") else "error"
             return ToolResult.run(
                 "browser_search",
-                {"query": q, "limit": limit},
-                {"query": q, "engine": "duckduckgo", "results": results},
+                {"query": q, "limit": limit, "include_content": include_content},
+                output,
+                status=status,
                 started_at=started,
             )
         except Exception as exc:
@@ -186,36 +148,3 @@ class ToolRegistry:
             except ValueError:
                 continue
         return None
-
-    def _parse_duckduckgo_results(self, raw_html: str, limit: int) -> list[dict[str, str]]:
-        matches = re.findall(
-            r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
-            raw_html,
-            flags=re.I | re.S,
-        )
-        results: list[dict[str, str]] = []
-        for href, title_html in matches:
-            title = re.sub(r"<[^>]+>", "", title_html)
-            title = html.unescape(title).strip()
-            if not title:
-                continue
-            results.append({"title": title, "url": html.unescape(href)})
-            if len(results) >= limit:
-                break
-        if results:
-            return results
-
-        scripts = re.findall(r"DDG\.pageLayout\.load\('d',\s*(\{.*?\})\s*\);", raw_html, flags=re.S)
-        for blob in scripts:
-            try:
-                data = json.loads(blob)
-            except Exception:
-                continue
-            for item in data.get("results", [])[:limit]:
-                title = str(item.get("t") or "").strip()
-                href = str(item.get("u") or "").strip()
-                if title and href:
-                    results.append({"title": title, "url": href})
-            if results:
-                break
-        return results[:limit]

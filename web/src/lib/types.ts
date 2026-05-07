@@ -31,6 +31,10 @@ export type Settings = {
   local_openai_model?: string;
   local_openai_api_key?: string;
   has_local_openai_api_key?: boolean;
+  firecrawl_base_url?: string;
+  firecrawl_api_key?: string;
+  has_firecrawl_api_key?: boolean;
+  searxng_base_url?: string;
   gemini_model?: string;
   gemini_api_key?: string;
   has_gemini_api_key?: boolean;

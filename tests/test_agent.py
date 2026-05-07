@@ -129,24 +129,129 @@ class AgentTests(unittest.TestCase):
             saved = (root / "vault" / "Research" / "jepa-papers.md").read_text(encoding="utf-8")
             self.assertIn("Top JEPA papers", saved)
 
-    def test_research_command_routes_to_browser_search_tool(self):
+    def test_research_save_extracts_note_draft_and_routes_to_research(self):
+        class ResearchLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {
+                    "text": (
+                        "Here are the conversational findings.\n\n"
+                        "**Obsidian Note Draft**\n\n"
+                        "```markdown\n"
+                        "# Latest JEPA Papers\n\n"
+                        "## Summary\n"
+                        "Only this clean note body should be saved.\n"
+                        "```\n\n"
+                        "Research provider: `firecrawl:self-hosted`"
+                    ),
+                    "response_id": "resp_test",
+                }
+
+            def memory_save_target(self, request, content, folders, existing_notes, options=None):
+                return {"folder": "Inbox", "note": "latest-jepa-papers.md"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            (vault / "Research").mkdir(parents=True)
+            memory = ObsidianMemory(vault)
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), ResearchLLM())
+
+            result = agent.turn(None, "can you find the latest papers on JEPA and their details and document them in my obsidian")
+
+            self.assertIn("Saved to Obsidian at `Research/latest-jepa-papers.md`.", result["message"]["content"])
+            saved = (vault / "Research" / "latest-jepa-papers.md").read_text(encoding="utf-8")
+            self.assertIn("# Latest JEPA Papers", saved)
+            self.assertIn("Only this clean note body should be saved.", saved)
+            self.assertNotIn("Here are the conversational findings.", saved)
+            self.assertNotIn("Obsidian Note Draft", saved)
+            self.assertFalse((vault / "Inbox" / "latest-jepa-papers.md").exists())
+
+    def test_save_target_without_llm_prefers_relevant_existing_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            (vault / "Research").mkdir(parents=True)
+            memory = ObsidianMemory(vault)
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
+
+            target = agent._memory_save_target(
+                "find latest JEPA papers and document them",
+                "# Latest JEPA Papers\n\nSources from arXiv research papers.",
+                {},
+            )
+
+            self.assertEqual(target["folder"], "Research")
+            self.assertEqual(target["note"], "latest-jepa-papers.md")
+
+    def test_save_target_creates_new_folder_when_no_existing_folder_fits(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             memory = ObsidianMemory(root / "vault")
             agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
+
+            target = agent._memory_save_target(
+                "document sourdough starter feeding schedule",
+                "# Sourdough Starter Feeding Schedule\n\nWeekly maintenance notes.",
+                {},
+            )
+
+            self.assertEqual(target["folder"], "Sourdough Starter Feeding Schedule")
+            self.assertEqual(target["note"], "sourdough-starter-feeding-schedule.md")
+
+    def test_stream_research_and_document_saves_answer(self):
+        class ResearchLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {"text": "Streamed JEPA findings [1].", "response_id": "resp_test"}
+
+            def memory_save_target(self, request, content, folders, existing_notes, options=None):
+                return {"folder": "Research", "note": "streamed-jepa.md"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), ResearchLLM())
+
+            def fake_search(name, **kwargs):
+                from sankalp.tools.base import ToolResult
+                if name == "browser_search":
+                    return ToolResult.run(
+                        "browser_search",
+                        {"query": kwargs.get("query"), "limit": kwargs.get("limit")},
+                        {"engine": "test", "results": [{"title": "A", "url": "https://example.com", "markdown": "Source body"}]},
+                    )
+                return ToolRegistry(memory).call(name, **kwargs)
+
+            agent.tools.call = fake_search  # type: ignore[method-assign]
+            events = list(agent.turn_stream(None, "find latest JEPA papers and document them in my obsidian"))
+            final_text = events[-1]["data"]["message"]["content"]
+
+            self.assertIn("Saved to Obsidian at `Research/streamed-jepa.md`.", final_text)
+            saved = (root / "vault" / "Research" / "streamed-jepa.md").read_text(encoding="utf-8")
+            self.assertIn("Streamed JEPA findings", saved)
+
+    def test_research_command_routes_to_browser_search_tool(self):
+        class ResearchAnswerLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {"text": "Summarized result [1]\n\nSources:\n[1] A - https://example.com", "response_id": None}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), ResearchAnswerLLM())
 
             def fake_search(name, **kwargs):
                 from sankalp.tools.base import ToolResult
                 return ToolResult.run(
                     "browser_search",
                     {"query": kwargs.get("query"), "limit": kwargs.get("limit")},
-                    {"results": [{"title": "A", "url": "https://example.com"}]},
+                    {"engine": "test", "results": [{"title": "A", "url": "https://example.com", "markdown": "Source body"}]},
                 )
 
             agent.tools.call = fake_search  # type: ignore[method-assign]
             result = agent.turn(None, "/research latest jepa papers")
 
-            self.assertIn("Top web results for", result["message"]["content"])
+            self.assertIn("Summarized result", result["message"]["content"])
+            self.assertIn("Research provider: `test`", result["message"]["content"])
 
     def test_normal_turn_retrieves_memory(self):
         with tempfile.TemporaryDirectory() as tmp:
