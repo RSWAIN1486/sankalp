@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html
+import json
+import re
 import shlex
 import subprocess
 import time
@@ -8,6 +10,7 @@ import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from sankalp.config import ALLOW_TERMINAL, allowed_roots
 from sankalp.memory import ObsidianMemory
@@ -49,6 +52,8 @@ class ToolRegistry:
             return self.memory_search(**kwargs)
         if name == "browser_fetch":
             return self.browser_fetch(**kwargs)
+        if name == "browser_search":
+            return self.browser_search(**kwargs)
         if name == "file_read":
             return self.file_read(**kwargs)
         if name == "file_append":
@@ -57,10 +62,17 @@ class ToolRegistry:
             return self.terminal(**kwargs)
         return ToolResult.run(name, kwargs, {"error": f"unknown tool: {name}"}, status="error")
 
-    def memory_remember(self, text: str, source: str = "chat") -> ToolResult:
+    def memory_remember(self, text: str, source: str = "chat", folder: str | None = None, note: str | None = None) -> ToolResult:
         started = time.time()
-        path = self.memory.capture(text, source=source)
-        return ToolResult.run("memory_remember", {"text": text, "source": source}, {"path": str(path)}, started_at=started)
+        target = self.memory.remember_target(text, folder=folder, note=note)
+        path = self.memory.capture(text, source=source, folder=folder, note=note)
+        output = {"path": str(path), "target": target}
+        return ToolResult.run(
+            "memory_remember",
+            {"text": text, "source": source, "folder": folder, "note": note},
+            output,
+            started_at=started,
+        )
 
     def memory_search(self, query: str, limit: int = 6, original_query: str | None = None) -> ToolResult:
         started = time.time()
@@ -94,6 +106,27 @@ class ToolRegistry:
             return ToolResult.run("browser_fetch", {"url": url}, {"content_type": content_type, "text": text[:12000]}, started_at=started)
         except Exception as exc:
             return ToolResult.run("browser_fetch", {"url": url}, {"error": str(exc)}, "error", started)
+
+    def browser_search(self, query: str, limit: int = 5) -> ToolResult:
+        started = time.time()
+        q = (query or "").strip()
+        if not q:
+            return ToolResult.run("browser_search", {"query": query, "limit": limit}, {"error": "query is empty"}, "error", started)
+        limit = max(1, min(int(limit or 5), 10))
+        url = f"https://duckduckgo.com/html/?q={quote(q)}"
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "Sankalp/0.1"})
+            with urllib.request.urlopen(request, timeout=15) as response:
+                raw = response.read(1_500_000).decode("utf-8", errors="replace")
+            results = self._parse_duckduckgo_results(raw, limit=limit)
+            return ToolResult.run(
+                "browser_search",
+                {"query": q, "limit": limit},
+                {"query": q, "engine": "duckduckgo", "results": results},
+                started_at=started,
+            )
+        except Exception as exc:
+            return ToolResult.run("browser_search", {"query": q, "limit": limit}, {"error": str(exc)}, "error", started)
 
     def file_read(self, path: str) -> ToolResult:
         started = time.time()
@@ -153,3 +186,36 @@ class ToolRegistry:
             except ValueError:
                 continue
         return None
+
+    def _parse_duckduckgo_results(self, raw_html: str, limit: int) -> list[dict[str, str]]:
+        matches = re.findall(
+            r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+            raw_html,
+            flags=re.I | re.S,
+        )
+        results: list[dict[str, str]] = []
+        for href, title_html in matches:
+            title = re.sub(r"<[^>]+>", "", title_html)
+            title = html.unescape(title).strip()
+            if not title:
+                continue
+            results.append({"title": title, "url": html.unescape(href)})
+            if len(results) >= limit:
+                break
+        if results:
+            return results
+
+        scripts = re.findall(r"DDG\.pageLayout\.load\('d',\s*(\{.*?\})\s*\);", raw_html, flags=re.S)
+        for blob in scripts:
+            try:
+                data = json.loads(blob)
+            except Exception:
+                continue
+            for item in data.get("results", [])[:limit]:
+                title = str(item.get("t") or "").strip()
+                href = str(item.get("u") or "").strip()
+                if title and href:
+                    results.append({"title": title, "url": href})
+            if results:
+                break
+        return results[:limit]

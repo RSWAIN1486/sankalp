@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from sankalp.memory import ObsidianMemory
 from sankalp.tools import ToolRegistry
@@ -41,8 +42,37 @@ class ToolTests(unittest.TestCase):
             result = tools.call("memory_search", query="stripe fraud detection")
 
             self.assertEqual(result.status, "ok")
-            self.assertEqual(result.output["hits"][0]["path"].split("/")[0], "Inbox")
+            self.assertTrue(result.output["hits"][0]["path"].endswith(".md"))
             self.assertIn("Stripe Radar", result.output["hits"][0]["snippet"])
+
+    def test_browser_search_parses_results(self):
+        class FakeResponse:
+            def __init__(self, payload: bytes):
+                self._payload = payload
+
+            def read(self, _limit=None):
+                return self._payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+        html = b'''
+        <html><body>
+        <a class="result__a" href="https://example.com/a">Result A</a>
+        <a class="result__a" href="https://example.com/b">Result B</a>
+        </body></html>
+        '''
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = ToolRegistry(ObsidianMemory(Path(tmp)))
+            with patch("urllib.request.urlopen", return_value=FakeResponse(html)):
+                result = tools.call("browser_search", query="jepa papers", limit=2)
+
+            self.assertEqual(result.status, "ok")
+            self.assertEqual(len(result.output["results"]), 2)
+            self.assertEqual(result.output["results"][0]["url"], "https://example.com/a")
 
 
 if __name__ == "__main__":

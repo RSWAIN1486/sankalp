@@ -221,13 +221,22 @@ Inbox/YYYY-MM-DD.md
 Decisions/
 ```
 
-Writes are append-first. `/remember` captures go to `Inbox/`; chat turns go to `Sessions/`;
+Writes are append-first. `/remember` captures now use smart routing: explicit `folder:` and
+`note:` hints first, then best existing-note match, then best folder match, and finally
+`Inbox/` fallback while creating missing targets as needed. Chat turns go to `Sessions/`;
 profile edits and inferred traits go to `People/you.md`. Deleting a chat session removes
 the JSON session and matching `Sessions/YYYY-MM-DD-<session-id>.md` Obsidian transcript.
 Retrieval is lightweight keyword scoring for now.
 
 Slash memory capture is now standardized as `/remember ...` in the composer command flow.
 Legacy `remember:` phrasing is still accepted for compatibility with older transcripts.
+Natural-language save intents like "document this in my obsidian" are also routed through
+`memory_remember`, using the previous assistant message when the user references "this/that/above".
+Save-target selection is now hybrid: the configured LLM can choose folder and note name from
+the current vault folder/note map, and deterministic sanitization/fallback still guarantees
+safe local writes even when no model suggestion is available.
+For combined prompts ("find/research ... and document/save"), Sankalp now defers saving until
+after the answer is generated, then stores the produced findings instead of the raw user prompt.
 
 When the user explicitly asks to search, check, retrieve, or find something in memory,
 `Agent.turn` routes the request through the `memory_search` tool before any model call.
@@ -248,8 +257,13 @@ requests explicit.
 Tool routing is intentionally two-step. Cheap deterministic commands and regex checks run
 first for obvious intents such as `/remember` and "in my memory". If those do not select a
 tool, the configured LLM may choose from a small safe-read catalog: `memory_search`,
-`browser_fetch`, or `file_read`. Write and terminal tools remain explicit commands because
+`browser_fetch`, `browser_search`, or `file_read`. Write and terminal tools remain explicit commands because
 LLM selection is useful for wording flexibility, not for hidden side effects.
+
+Web research is now a first-class skill path. `/research <query>` uses `browser_search` to
+discover sources; follow-up `/fetch <url>` can extract article text for deeper synthesis.
+Combined prompts like "find latest ... and document it" now generate the answer first and
+then save findings to memory.
 
 Capability discovery is explicit in the WebUI. The backend exposes `/api/capabilities`
 for a typed list of features, folder-backed skills, tools, and slash commands.

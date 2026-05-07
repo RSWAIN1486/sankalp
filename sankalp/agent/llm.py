@@ -77,6 +77,51 @@ class LLMAdapter:
             return None
         return self._parse_memory_search_query(str(result.get("text") or ""))
 
+    def memory_save_target(
+        self,
+        request: str,
+        content: str,
+        folders: list[str],
+        existing_notes: list[str],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, str] | None:
+        settings = self._settings_with_options(options or {})
+        provider = settings.get("provider", "local")
+        folder_text = "\n".join(f"- {item}" for item in folders[:200]) or "- Inbox"
+        note_text = "\n".join(f"- {item}" for item in existing_notes[:120]) or "- (none)"
+        prompt = (
+            "Choose the best Obsidian save target for this note.\n"
+            "Return only JSON with: {\"folder\":\"...\",\"note\":\"...\"}.\n"
+            "Rules:\n"
+            "- Prefer an existing folder when it semantically fits.\n"
+            "- Use concise professional folder/note names.\n"
+            "- Avoid conversational phrasing in filenames.\n"
+            "- note must end with .md.\n"
+            "- If uncertain, choose Inbox and a neutral note title.\n\n"
+            f"User request:\n{request[:1000]}\n\n"
+            f"Content to save:\n{content[:2500]}\n\n"
+            f"Existing folders:\n{folder_text}\n\n"
+            f"Existing note paths:\n{note_text}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            if provider == "local_openai":
+                result = self._local_openai(settings, messages, "")
+            elif provider == "gemini":
+                result = self._gemini(settings, messages, "")
+            elif provider == "codex":
+                result = self._codex(settings, messages, "")
+            elif provider == "openai":
+                api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return None
+                result = self._openai(api_key, settings, messages, "", None)
+            else:
+                return None
+        except Exception:
+            return None
+        return self._parse_memory_save_target(str(result.get("text") or ""))
+
     def select_tool(self, message: str, tools: list[dict[str, Any]], options: dict[str, Any] | None = None) -> dict[str, Any] | None:
         settings = self._settings_with_options(options or {})
         provider = settings.get("provider", "local")
@@ -577,7 +622,7 @@ class LLMAdapter:
         prompt = (
             self._developer_prompt(memory_context)
             + "\n\nRespond to the latest user message as a personal assistant. "
-            + "Do not edit files or run project-changing commands.\n\nTranscript:\n"
+            + "If the user asks to save something to Obsidian, provide content suitable for memory capture.\n\nTranscript:\n"
             + transcript
         )
         with tempfile.NamedTemporaryFile(prefix="sankalp-codex-", suffix=".txt") as output:
@@ -671,7 +716,7 @@ class LLMAdapter:
         prompt = (
             self._developer_prompt(memory_context)
             + "\n\nRespond to the latest user message as a personal assistant. "
-            + "Do not edit files or run project-changing commands.\n\nTranscript:\n"
+            + "If the user asks to save something to Obsidian, provide content suitable for memory capture.\n\nTranscript:\n"
             + transcript
         )
         with tempfile.NamedTemporaryFile(prefix="sankalp-codex-stream-", suffix=".txt") as output:
@@ -926,6 +971,32 @@ class LLMAdapter:
         if len(query) < 3:
             return None
         return query[:300]
+
+    def _parse_memory_save_target(self, value: str) -> dict[str, str] | None:
+        text = value.strip()
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start:end + 1]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        folder = str(data.get("folder") or "").strip().strip("/")
+        note = str(data.get("note") or "").strip()
+        if not folder or len(folder) > 200:
+            return None
+        if not note or len(note) > 160:
+            return None
+        if "/" in note or "\\" in note:
+            return None
+        if not note.lower().endswith(".md"):
+            note += ".md"
+        return {"folder": folder, "note": note}
 
     def _fallback(self, messages: list[dict[str, str]], memory_context: str) -> str:
         latest = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")

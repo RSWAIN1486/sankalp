@@ -6,17 +6,43 @@ from sankalp.memory import ObsidianMemory
 
 
 class MemoryTests(unittest.TestCase):
-    def test_capture_appends_to_inbox_and_retrieves(self):
+    def test_capture_routes_to_best_folder_and_retrieves(self):
         with tempfile.TemporaryDirectory() as tmp:
-            memory = ObsidianMemory(Path(tmp))
+            vault = Path(tmp)
+            (vault / "Research").mkdir(parents=True)
+            memory = ObsidianMemory(vault)
             path = memory.capture("The user prefers append-first memory.", source="test")
 
-            self.assertEqual(path.parent.name, "Inbox")
+            self.assertEqual(path.parent.parent.name, "Projects")
             self.assertIn("append-first", path.read_text(encoding="utf-8"))
 
             hits = memory.retrieve("append first memory")
             self.assertTrue(hits)
-            self.assertEqual(hits[0].path, str(path.relative_to(Path(tmp))))
+            self.assertEqual(hits[0].path, str(path.resolve().relative_to(Path(tmp).resolve())))
+
+    def test_capture_uses_explicit_folder_and_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = ObsidianMemory(Path(tmp))
+            content = "folder: Research/JEPA\nnote: papers.md\n\nV-JEPA reading notes."
+
+            path = memory.capture(content, source="test")
+
+            self.assertEqual(path.name, "papers.md")
+            self.assertEqual(str(path.parent.resolve().relative_to(Path(tmp).resolve())), "Research/JEPA")
+            self.assertIn("V-JEPA", path.read_text(encoding="utf-8"))
+
+    def test_folder_paths_lists_nested_non_session_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = Path(tmp)
+            (vault / "Research" / "JEPA").mkdir(parents=True)
+            (vault / "Sessions" / "Internal").mkdir(parents=True)
+            memory = ObsidianMemory(vault)
+
+            paths = memory.folder_paths()
+
+            self.assertIn("Research", paths)
+            self.assertIn("Research/JEPA", paths)
+            self.assertNotIn("Sessions/Internal", paths)
 
     def test_session_note_is_markdown(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -106,13 +106,54 @@ class ObsidianMemory:
             path.write_text(updated, encoding="utf-8")
         return bool(count)
 
-    def capture(self, text: str, source: str = "chat") -> Path:
+    def capture(self, text: str, source: str = "chat", folder: str | None = None, note: str | None = None) -> Path:
+        return self.capture_smart(text, source=source, folder=folder, note=note)
+
+    def capture_smart(self, text: str, source: str = "chat", folder: str | None = None, note: str | None = None) -> Path:
+        plan = self._remember_plan(text, folder=folder, note=note)
+        folder = self._safe_folder_path(plan["folder"])
+        note_name = self._safe_note_name(plan["note"])
+        path = folder / note_name
         now = datetime.now()
-        path = self.vault / "Inbox" / f"{now:%Y-%m-%d}.md"
         entry = f"\n## {now:%H:%M:%S} - {source}\n\n{text.strip()}\n"
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            title = path.stem.replace("-", " ").strip().title()
+            path.write_text(f"# {title}\n", encoding="utf-8")
         with path.open("a", encoding="utf-8") as handle:
             handle.write(entry)
         return path
+
+    def remember_target(self, text: str, folder: str | None = None, note: str | None = None) -> dict[str, str]:
+        plan = self._remember_plan(text, folder=folder, note=note)
+        folder = self._safe_folder_path(plan["folder"])
+        note_name = self._safe_note_name(plan["note"])
+        path = folder / note_name
+        return {"folder": self._display_path(folder), "note": note_name, "path": self._display_path(path)}
+
+    def folder_paths(self, max_depth: int = 5) -> list[str]:
+        root = self.vault
+        if self._list_error(root):
+            return []
+        paths: list[str] = []
+        try:
+            for path in root.rglob("*"):
+                if not path.is_dir():
+                    continue
+                if self._has_hidden_part(path):
+                    continue
+                rel = self._display_path(path)
+                if not rel or rel == ".":
+                    continue
+                depth = len(Path(rel).parts)
+                if depth > max_depth:
+                    continue
+                if rel.split("/")[0].lower() == "sessions":
+                    continue
+                paths.append(rel)
+        except Exception:
+            return []
+        return sorted(set(paths), key=str.lower)
 
     def append_session_turn(self, session_id: str, role: str, content: str) -> Path:
         now = datetime.now()
@@ -366,6 +407,16 @@ class ObsidianMemory:
             pass
         return self.vault
 
+    def _safe_folder_path(self, folder: str) -> Path:
+        if not folder:
+            return self.vault
+        candidate = (self.vault / folder.strip().strip("/")).resolve()
+        try:
+            candidate.relative_to(self.vault.resolve())
+            return candidate
+        except ValueError:
+            return self.vault
+
     def _safe_folder_or_file(self, target: str) -> Path:
         candidate = (self.vault / target.strip().strip("/")).resolve()
         try:
@@ -430,3 +481,115 @@ class ObsidianMemory:
                 "text": text_parts[-1] if text_parts else "",
             })
         return traits
+
+    def _remember_plan(self, text: str, folder: str | None = None, note: str | None = None) -> dict[str, str]:
+        if folder or note:
+            return {"folder": folder or "Inbox", "note": note or self._infer_note_name(text)}
+        explicit = self._parse_explicit_remember_target(text)
+        if explicit:
+            folder = explicit.get("folder") or "Inbox"
+            note = explicit.get("note") or f"{datetime.now():%Y-%m-%d}.md"
+            return {"folder": folder, "note": note}
+
+        best = self._best_existing_note(text)
+        if best is not None and best.score >= 3:
+            note_path = Path(best.path)
+            folder = str(note_path.parent).strip(".")
+            return {"folder": folder or "Inbox", "note": note_path.name}
+
+        folder = self._best_folder_for_text(text)
+        note = self._infer_note_name(text)
+        return {"folder": folder, "note": note}
+
+    def _parse_explicit_remember_target(self, text: str) -> dict[str, str] | None:
+        content = text.strip()
+        marker = re.search(r"(?:^|\n)\s*(?:folder|path)\s*:\s*(.+)\s*$", content, flags=re.I | re.M)
+        note_marker = re.search(r"(?:^|\n)\s*(?:note|file|title)\s*:\s*(.+)\s*$", content, flags=re.I | re.M)
+        folder = marker.group(1).strip() if marker else ""
+        note = note_marker.group(1).strip() if note_marker else ""
+        if folder or note:
+            return {"folder": folder, "note": note}
+
+        inline = re.search(r"(?:save|remember|document)\s+(?:this\s+)?(?:to|in)\s+([A-Za-z0-9 _\-/]+/[^:\n]+)", content, flags=re.I)
+        if inline:
+            raw = inline.group(1).strip().strip(".")
+            candidate = Path(raw)
+            if candidate.suffix.lower() == ".md":
+                return {"folder": str(candidate.parent), "note": candidate.name}
+            return {"folder": raw, "note": ""}
+        return None
+
+    def _best_existing_note(self, text: str) -> MemoryHit | None:
+        terms = self._query_terms(text)
+        if not terms:
+            return None
+        hits = self.retrieve(" ".join(sorted(terms)), limit=1)
+        return hits[0] if hits else None
+
+    def _best_folder_for_text(self, text: str) -> str:
+        terms = self._query_terms(text)
+        if not terms:
+            return "Inbox"
+        folders = self.folders()
+        best_path = "Inbox"
+        best_score = 0
+        for item in folders:
+            folder_path = item.get("path") or ""
+            if not folder_path:
+                continue
+            score = self._match_score(folder_path, terms)
+            if score > best_score:
+                best_score = score
+                best_path = folder_path
+        if best_score > 0:
+            return best_path
+        topic = self._topic_slug(text)
+        if topic:
+            return f"Projects/{topic}"
+        return "Inbox"
+
+    def _topic_slug(self, text: str) -> str:
+        words = [w.lower() for w in re.findall(r"[A-Za-z0-9]{3,}", text)]
+        stop = {"this", "that", "with", "from", "into", "about", "please", "save", "remember", "document", "obsidian", "vault"}
+        filtered = [w for w in words if w not in stop]
+        if not filtered:
+            return ""
+        topic = "-".join(filtered[:3])
+        return topic[:60].strip("-")
+
+    def _infer_note_name(self, text: str) -> str:
+        heading = re.search(r"^\s*#\s+(.+)$", text, flags=re.M)
+        if heading:
+            title = heading.group(1).strip()
+            return f"{self._slug(title)}.md"
+        sentence = re.split(r"[.!?\n]", text.strip(), maxsplit=1)[0]
+        sentence = re.sub(
+            r"^\s*(can you|could you|please|pls|would you|find|look up|save|document|remember)\b[:\s-]*",
+            "",
+            sentence,
+            flags=re.I,
+        )
+        sentence = re.sub(r"\b(in|into)\s+my\s+(obsidian|vault|notes?)\b", "", sentence, flags=re.I)
+        title = " ".join(re.findall(r"[A-Za-z0-9]+", sentence)[:8]).strip()
+        if not title:
+            return f"{datetime.now():%Y-%m-%d}.md"
+        return f"{self._slug(title)}.md"
+
+    def _match_score(self, value: str, terms: set[str]) -> int:
+        lower = value.lower()
+        return sum(lower.count(term) for term in terms)
+
+    def _slug(self, value: str) -> str:
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").lower()
+        return slug or "note"
+
+    def _safe_note_name(self, note: str) -> str:
+        name = note.strip()
+        if not name:
+            name = f"{datetime.now():%Y-%m-%d}.md"
+        if "/" in name or "\\" in name:
+            name = Path(name).name
+        if not name.lower().endswith(".md"):
+            name += ".md"
+        slugged = self._slug(name[:-3])
+        return f"{slugged}.md"

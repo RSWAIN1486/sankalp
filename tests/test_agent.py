@@ -29,6 +29,9 @@ class FakeLLM:
         yield {"type": "delta", "text": "world"}
         yield {"type": "response_id", "response_id": "resp_stream"}
 
+    def memory_save_target(self, request, content, folders, existing_notes, options=None):
+        return None
+
 
 class AgentTests(unittest.TestCase):
     def test_llm_prompt_reads_soul_file(self):
@@ -54,7 +57,96 @@ class AgentTests(unittest.TestCase):
             result = agent.turn(None, "/remember I like searchable notes")
 
             self.assertIn("Remembered", result["message"]["content"])
+            self.assertIn(".md", result["message"]["content"])
             self.assertEqual(result["tool_calls"][0]["name"], "memory_remember")
+
+    def test_obsidian_save_request_routes_without_slash_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
+            first = agent.turn(None, "JEPA summary content")
+            session_id = first["session"]["session_id"]
+
+            result = agent.turn(session_id, "please document that in my obsidian vault")
+
+            self.assertIn("Saved to Obsidian", result["message"]["content"])
+            self.assertEqual(result["tool_calls"][-1]["name"], "memory_remember")
+
+    def test_plain_save_it_routes_to_memory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
+            first = agent.turn(None, "Important JEPA findings summary")
+            session_id = first["session"]["session_id"]
+
+            result = agent.turn(session_id, "save it")
+
+            self.assertIn("Saved to Obsidian", result["message"]["content"])
+            self.assertEqual(result["tool_calls"][-1]["name"], "memory_remember")
+
+    def test_save_uses_llm_suggested_folder_and_note(self):
+        class SaveTargetLLM(FakeLLM):
+            def memory_save_target(self, request, content, folders, existing_notes, options=None):
+                return {"folder": "Research", "note": "jepa-papers.md"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), SaveTargetLLM())
+            first = agent.turn(None, "JEPA findings summary")
+            session_id = first["session"]["session_id"]
+
+            result = agent.turn(session_id, "document it")
+            text = result["message"]["content"]
+            tool_input = result["tool_calls"][-1]["input"]
+
+            self.assertIn("Research/jepa-papers.md", text)
+            self.assertEqual(tool_input["folder"], "Research")
+            self.assertEqual(tool_input["note"], "jepa-papers.md")
+
+    def test_research_and_document_saves_answer_not_prompt(self):
+        class ResearchLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {
+                    "text": "Top JEPA papers: I-JEPA, V-JEPA, V-JEPA 2.",
+                    "response_id": "resp_test",
+                }
+
+            def memory_save_target(self, request, content, folders, existing_notes, options=None):
+                return {"folder": "Research", "note": "jepa-papers.md"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), ResearchLLM())
+
+            result = agent.turn(None, "can you find the latest papers on JEPA and their details and document them in my obsidian")
+
+            self.assertIn("Top JEPA papers", result["message"]["content"])
+            self.assertIn("Saved to Obsidian at `Research/jepa-papers.md`.", result["message"]["content"])
+            saved = (root / "vault" / "Research" / "jepa-papers.md").read_text(encoding="utf-8")
+            self.assertIn("Top JEPA papers", saved)
+
+    def test_research_command_routes_to_browser_search_tool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = ObsidianMemory(root / "vault")
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), FakeLLM())
+
+            def fake_search(name, **kwargs):
+                from sankalp.tools.base import ToolResult
+                return ToolResult.run(
+                    "browser_search",
+                    {"query": kwargs.get("query"), "limit": kwargs.get("limit")},
+                    {"results": [{"title": "A", "url": "https://example.com"}]},
+                )
+
+            agent.tools.call = fake_search  # type: ignore[method-assign]
+            result = agent.turn(None, "/research latest jepa papers")
+
+            self.assertIn("Top web results for", result["message"]["content"])
 
     def test_normal_turn_retrieves_memory(self):
         with tempfile.TemporaryDirectory() as tmp:

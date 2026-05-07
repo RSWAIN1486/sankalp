@@ -52,17 +52,19 @@ HTTPD: ThreadingHTTPServer | None = None
 
 
 TOOLS = [
-    {"name": "memory_remember", "description": "Append memory facts into Obsidian inbox notes."},
+    {"name": "memory_remember", "description": "Save memory into the best matching Obsidian folder/note, creating it when needed."},
     {"name": "memory_search", "description": "Search the configured Obsidian vault (excluding session transcripts)."},
     {"name": "browser_fetch", "description": "Fetch and extract readable text from a URL."},
+    {"name": "browser_search", "description": "Search the web and return top links for a topic."},
     {"name": "file_read", "description": "Read local files inside allowed roots."},
     {"name": "file_append", "description": "Append text to local files inside allowed roots."},
     {"name": "terminal", "description": "Run terminal commands when explicitly enabled by settings/env."},
 ]
 
 COMMANDS = [
-    {"command": "/remember <fact>", "description": "Save a durable fact to memory inbox."},
+    {"command": "/remember <fact>", "description": "Save a durable note in the best matching Obsidian folder or note."},
     {"command": "/fetch <url>", "description": "Fetch and summarize a webpage or text URL."},
+    {"command": "/research <query>", "description": "Run web research search for the topic and list top sources."},
     {"command": "/read <path>", "description": "Read a local file from allowed roots."},
     {"command": "/append <path> :: <text>", "description": "Append text into a local file."},
     {"command": "/sh <command>", "description": "Run a terminal command when terminal access is enabled."},

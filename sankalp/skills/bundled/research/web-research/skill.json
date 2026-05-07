@@ -1,0 +1,13 @@
+{
+  "id": "research.web",
+  "name": "Web Research",
+  "description": "Research any web topic, return source links, and optionally save findings to Obsidian.",
+  "version": "0.1.0",
+  "category": "research",
+  "triggers": ["research", "latest", "find", "sources", "web", "papers", "news"],
+  "commands": ["/research"],
+  "requires": {
+    "tools": ["browser_search", "browser_fetch", "memory_remember"]
+  },
+  "entrypoint": "SKILL.md"
+}

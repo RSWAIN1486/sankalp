@@ -39,7 +39,8 @@ class Agent:
             session.title = title_from_query(content)
             session.title_source = "fallback"
 
-        routed = self._route_explicit_tool(session, content, options)
+        auto_save_after_answer = self._should_auto_save_after_answer(content)
+        routed = None if auto_save_after_answer else self._route_explicit_tool(session, content, options)
         if routed is not None:
             answer = routed
         else:
@@ -56,6 +57,10 @@ class Agent:
                 except Exception as exc:
                     answer = f"I hit an LLM adapter error: {exc}"
                 self._maybe_infer_profile_trait(session, content)
+            if auto_save_after_answer and answer and not answer.startswith("I hit an LLM adapter error:"):
+                save_result = self._save_answer_to_memory(session, content, answer, options)
+                if save_result:
+                    answer = f"{answer}\n\n{save_result}"
 
         session.messages.append({"role": "assistant", "content": answer})
         self.memory.append_session_turn(session.session_id, "assistant", answer)
@@ -84,7 +89,8 @@ class Agent:
             session.title_source = "fallback"
         yield {"event": "status", "data": {"label": "Thinking", "detail": "Preparing context"}}
 
-        routed = self._route_explicit_tool(session, content, options)
+        auto_save_after_answer = self._should_auto_save_after_answer(content)
+        routed = None if auto_save_after_answer else self._route_explicit_tool(session, content, options)
         answer = ""
         if routed is not None:
             answer = routed
@@ -126,6 +132,11 @@ class Agent:
                     answer = f"I hit an LLM adapter error: {exc}"
                     yield {"event": "delta", "data": {"text": answer}}
                 self._maybe_infer_profile_trait(session, content)
+                if auto_save_after_answer and answer and not answer.startswith("I hit an LLM adapter error:"):
+                    save_result = self._save_answer_to_memory(session, content, answer, options)
+                    if save_result:
+                        answer += f"\n\n{save_result}"
+                        yield {"event": "delta", "data": {"text": f"\n\n{save_result}"}}
 
         session.messages.append({"role": "assistant", "content": answer})
         self.memory.append_session_turn(session.session_id, "assistant", answer)
@@ -145,11 +156,37 @@ class Agent:
                 text = content.split(":", 1)[1].strip()
             else:
                 text = content[len("remember "):].strip()
-            result = self.tools.call("memory_remember", text=text, source=f"session:{session.session_id}")
+            target = self._memory_save_target(content, text, options)
+            result = self.tools.call(
+                "memory_remember",
+                text=text,
+                source=f"session:{session.session_id}",
+                folder=target.get("folder"),
+                note=target.get("note"),
+            )
             session.tool_calls.append(asdict(result))
             if result.status == "ok":
-                return "Remembered. I appended it to the Obsidian inbox."
+                target_path = result.output.get("target", {}).get("path") or result.output.get("path")
+                return f"Remembered. I saved it to `{target_path}`."
             return f"I could not save that memory: {result.output}"
+
+        if self._is_obsidian_save_request(lowered):
+            text = self._memory_capture_text_for_request(session, content)
+            if not text:
+                return "I couldn't find prior content to save. Share the content or use `/remember <text>`."
+            target = self._memory_save_target(content, text, options)
+            result = self.tools.call(
+                "memory_remember",
+                text=text,
+                source=f"session:{session.session_id}",
+                folder=target.get("folder"),
+                note=target.get("note"),
+            )
+            session.tool_calls.append(asdict(result))
+            if result.status == "ok":
+                target_path = result.output.get("target", {}).get("path") or result.output.get("path")
+                return f"Saved to Obsidian at `{target_path}`."
+            return f"I could not save that to Obsidian: {result.output}"
 
         if self._is_memory_lookup_request(lowered):
             search_query = self._memory_search_query(content, options)
@@ -167,6 +204,14 @@ class Agent:
                 text = result.output.get("text", "")
                 return f"Fetched `{url}`.\n\n{text[:2500]}"
             return f"Fetch failed: {result.output}"
+
+        if lowered.startswith("/research "):
+            query = content[len("/research "):].strip()
+            result = self.tools.call("browser_search", query=query, limit=6)
+            session.tool_calls.append(asdict(result))
+            if result.status != "ok":
+                return f"Research failed: {result.output}"
+            return self._format_browser_search(query, result.output)
 
         if lowered.startswith("/read "):
             path = content[len("/read "):].strip()
@@ -198,6 +243,64 @@ class Agent:
 
         return None
 
+    def _is_obsidian_save_request(self, lowered: str) -> bool:
+        explicit_save_verbs = ["save", "document", "remember", "store", "write down"]
+        if any(word in lowered for word in ["obsidian", "vault"]) and any(word in lowered for word in explicit_save_verbs):
+            return True
+        shorthand_patterns = [
+            r"^\s*(save|document|store)\s+(it|this|that|them)\b",
+            r"\b(can you|please)\s+(save|document|store)\s+(it|this|that|them)\b",
+            r"\b(save|document|store)\s+(this|that|it|them)\s*(for me)?\s*$",
+        ]
+        return any(re.search(pattern, lowered) for pattern in shorthand_patterns)
+
+    def _memory_capture_text_for_request(self, session: Session, content: str) -> str:
+        lowered = content.lower()
+        if any(word in lowered for word in ["above", "that", "those", "them", "it"]):
+            for item in reversed(session.messages[:-1]):
+                if item.get("role") == "assistant":
+                    previous = str(item.get("content") or "").strip()
+                    if previous:
+                        return previous
+        return content.strip()
+
+    def _should_auto_save_after_answer(self, content: str) -> bool:
+        lowered = content.lower()
+        wants_save = self._is_obsidian_save_request(lowered)
+        research_like = any(term in lowered for term in [
+            "find", "explore", "research", "latest", "paper", "papers", "look up", "search",
+        ])
+        return wants_save and research_like
+
+    def _save_answer_to_memory(self, session: Session, request_text: str, answer_text: str, options: dict[str, Any]) -> str | None:
+        target = self._memory_save_target(request_text, answer_text, options)
+        result = self.tools.call(
+            "memory_remember",
+            text=answer_text,
+            source=f"session:{session.session_id}",
+            folder=target.get("folder"),
+            note=target.get("note"),
+        )
+        session.tool_calls.append(asdict(result))
+        if result.status != "ok":
+            return "I could not save the findings to Obsidian."
+        target_path = result.output.get("target", {}).get("path") or result.output.get("path")
+        return f"Saved to Obsidian at `{target_path}`."
+
+    def _memory_save_target(self, request_text: str, content_text: str, options: dict[str, Any]) -> dict[str, str]:
+        default = {"folder": "", "note": ""}
+        folders = self.memory.folder_paths(max_depth=5)
+        note_paths = [item.get("path", "") for item in self.memory.notes(limit=120).get("notes", []) if item.get("path")]
+        chooser = getattr(self.llm, "memory_save_target", None)
+        if callable(chooser):
+            suggestion = chooser(request_text, content_text, folders, note_paths, options)
+            if isinstance(suggestion, dict):
+                folder = str(suggestion.get("folder") or "").strip()
+                note = str(suggestion.get("note") or "").strip()
+                if folder and note:
+                    return {"folder": folder, "note": note}
+        return default
+
     def _route_llm_selected_tool(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
         if not hasattr(self.llm, "select_tool"):
             return None
@@ -224,6 +327,14 @@ class Agent:
                 text = result.output.get("text", "")
                 return f"Fetched `{url}`.\n\n{text[:2500]}"
             return f"Fetch failed: {result.output}"
+        if tool == "browser_search":
+            query = str(arguments.get("query") or content).strip()
+            limit = int(arguments.get("limit") or 6)
+            result = self.tools.call("browser_search", query=query, limit=limit)
+            session.tool_calls.append(asdict(result))
+            if result.status != "ok":
+                return f"Research failed: {result.output}"
+            return self._format_browser_search(query, result.output)
         if tool == "file_read":
             path = str(arguments.get("path") or "").strip()
             if not path:
@@ -248,6 +359,11 @@ class Agent:
                 "arguments": {"url": "http or https URL"},
             },
             {
+                "name": "browser_search",
+                "description": "Search the web for fresh sources on a topic and return top results with links.",
+                "arguments": {"query": "topic to research", "limit": "optional result count"},
+            },
+            {
                 "name": "file_read",
                 "description": "Read a local file path when the user asks to inspect that file.",
                 "arguments": {"path": "path inside an allowed root"},
@@ -260,6 +376,17 @@ class Agent:
             if query:
                 return query
         return content
+
+    def _format_browser_search(self, query: str, output: dict[str, Any]) -> str:
+        results = output.get("results") or []
+        if not results:
+            return f"I searched the web for `{query}` but found no results."
+        lines = [f"Top web results for `{query}`:", ""]
+        for index, item in enumerate(results, start=1):
+            title = str(item.get("title") or "").strip()
+            url = str(item.get("url") or "").strip()
+            lines.append(f"{index}. {title} - {url}")
+        return "\n".join(lines)
 
     def _is_memory_lookup_request(self, lowered: str) -> bool:
         if any(phrase in lowered for phrase in ["in my memory", "from my memory", "from memory", "search memory", "check memory"]):
