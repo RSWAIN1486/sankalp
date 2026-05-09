@@ -43,7 +43,7 @@ scrolls independently.
 - `/fetch <url>` for readable-content extraction with provider-aware fallback.
 - Experimental macOS Computer Use via `/computer ...`: list visible apps, inspect accessibility
 trees, capture screenshots, open apps, click/type/key/scroll explicit targets, and run a bounded
-low-risk `/computer task <instruction>` loop.
+low-risk `/computer task <instruction>` loop. Implementation details live in `docs/computer-use.md`.
 - `/computer permissions [accessibility|screen]` opens the macOS Privacy panes needed by the
 experimental harness.
 - In dev mode, macOS permissions are granted to the launching app such as Terminal, iTerm, or

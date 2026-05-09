@@ -21,7 +21,7 @@ durable backend-state direction.
 - `sankalp/memory/obsidian.py`: vault reads/writes, memory search helpers, open-note helpers.
 - `sankalp/tools/registry.py`: explicit tool catalog and auditable tool-call logging.
 - `sankalp/computer/*`: experimental macOS Computer Use harness, action safety policy, and
-model-guided task loop.
+model-guided task loop. See `docs/computer-use.md` for implementation details.
 - `sankalp/skills/registry.py`: folder-backed skill discovery under `~/.sankalp/skills`.
 - `sankalp/updater.py`: release-manifest update checks and confirmed installer launch.
 
