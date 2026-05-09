@@ -1,301 +1,84 @@
 # Sankalp
 
-Sankalp is a local-first personal assistant with chat sessions, auditable tool activity,
-provider switching, and human-readable Obsidian-compatible memory.
+Sankalp is a local-first AI assistant with a professional WebUI, auditable tool activity, and Obsidian-compatible memory.
 
-The current app has two parts:
+## What This Repo Contains
 
-- Python backend: local JSON/SSE APIs, provider adapters, sessions, tools, and memory.
-- SvelteKit WebUI: the main chat interface, settings drawer, memory browser, and session
-  controls.
+- Python backend for local APIs, chat orchestration, providers, tools, sessions, and memory.
+- SvelteKit + TypeScript WebUI for chat, settings, memory browsing, and app controls.
 
-The Python backend is API-only. Use the SvelteKit WebUI for the browser interface.
+## Core Features
 
-## Requirements
-
-- macOS, Windows, or Linux
-- Python 3.9+
-- Node.js 24 via `nvm` for the WebUI
-
-On this Mac, `nvm` is already expected at `~/.nvm/nvm.sh`. If Node is not installed:
-
-```sh
-source ~/.nvm/nvm.sh
-nvm install 24
-```
+- Streaming chat responses with session history.
+- Multiple providers (`local`, `local_openai`, `codex`, `gemini`, `openai`).
+- Obsidian-compatible memory with `/remember` and memory search.
+- Tooling for web fetch/search and safe local file actions.
+- Local installed app flow with in-app update checks.
 
 ## Install
 
-### One-command macOS App Install
-
-Sankalp can install like a local WebUI app: the installer clones or updates the repo under
-`~/.sankalp/app`, installs Node through `nvm` when needed, builds the SvelteKit WebUI,
-creates `~/Applications/Sankalp.app`, frees the configured local port, and opens the app.
-You can run the curl command from any directory.
+### macOS (recommended)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_macos.sh | bash
 ```
 
-The installed app serves the built WebUI and the Python backend from one loopback URL:
-
-```text
-http://127.0.0.1:8765
-```
-
-Useful installer overrides:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_macos.sh | SANKALP_PORT=8766 bash
-SANKALP_INSTALL_DIR="$HOME/Developer/sankalp" bash scripts/install_macos.sh
-SANKALP_SKIP_PORT_KILL=1 bash scripts/install_macos.sh
-```
-
-By default the installer and app launcher free `SANKALP_PORT` before starting Sankalp. Set
-`SANKALP_SKIP_PORT_KILL=1` while installing if you want to handle occupied ports yourself.
-When you run `bash scripts/install_macos.sh` from a local checkout, the installer copies that
-checkout into `~/.sankalp/app` so uncommitted local changes can be tested before publishing
-the curl installer.
-
-The default `~/.sankalp/app` checkout is managed application code. Curl installs reset that
-checkout to `origin/main` so upgrades can recover from partial or local test installs. User
-state, sessions, settings, and memory live outside that checkout under `~/.sankalp/`.
-Reinstall also migrates an older `~/sankalp` checkout/home into the `~/.sankalp` agent-home
-layout when it can do so without touching the local source checkout running the installer.
-
-Installed users are notified through the in-app updater only when `update.json` advertises a
-new stable version. Bump `update.json` and `sankalp/__init__.py` together for releases worth
-surfacing in the UI.
-
-### One-command Windows Install
-
-On Windows, Sankalp supports a per-user managed install under `%USERPROFILE%\.sankalp\app`.
-The installer clones or updates the repo, builds the WebUI, creates a Start Menu shortcut,
-and opens Sankalp in the browser.
-
-Run in PowerShell:
+### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_windows.ps1 | iex
 ```
 
-Useful overrides:
-
-```powershell
-$env:SANKALP_PORT = "8766"
-$env:SANKALP_OBSIDIAN_ONBOARD = "prompt"
-irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_windows.ps1 | iex
-```
-
-Windows installer behavior matches managed macOS installs:
-
-- `%USERPROFILE%\.sankalp\app` is managed application code.
-- Reinstall/update resets managed checkout to `origin/main`.
-- User data remains in sibling folders under `%USERPROFILE%\.sankalp`.
-- Reinstall migrates older `%LOCALAPPDATA%\Sankalp\app` and `%USERPROFILE%\sankalp`
-  installs into `%USERPROFILE%\.sankalp` when possible.
-- Obsidian is checked during install; if missing, download page opens automatically.
-- When Obsidian is installed, Sankalp auto-detects the best accessible vault path.
-
-### Development Install
-
-Clone or enter the repo:
+### Linux / Manual Dev Install
 
 ```sh
-cd /Users/rswai/sankalp
-```
-
-Install WebUI dependencies:
-
-```sh
-cd web
-source ~/.nvm/nvm.sh
-nvm use
-npm install
-```
-
-## Run
-
-Start the Sankalp backend in one terminal:
-
-```sh
-cd /Users/rswai/sankalp
+git clone https://github.com/RSWAIN1486/sankalp.git
+cd sankalp
 python3 server.py
 ```
 
-The backend listens on:
-
-```text
-http://127.0.0.1:8765
-```
-
-Start the WebUI in a second terminal:
-
-```sh
-cd /Users/rswai/sankalp/web
-source ~/.nvm/nvm.sh
-nvm use
-npm run dev -- --port 5173
-```
-
-Open:
-
-```text
-http://127.0.0.1:5173
-```
-
-The WebUI proxies `/api/*` to the backend at `http://127.0.0.1:8765`.
-
-For installed app usage, run `cd web && npm run build` once and open
-`http://127.0.0.1:8765`; the Python backend serves the built WebUI directly.
-
-For macOS local development, you can relaunch both backend and frontend in one shot:
-
-```sh
-bash scripts/relaunch_dev.sh
-```
-
-This script kills existing listeners on backend/frontend dev ports, restarts both services,
-and writes logs to `.dev-logs/backend.log` and `.dev-logs/frontend.log`.
-
-## First Setup
-
-Open Settings from the gear icon.
-
-Provider tab:
-
-- `Local fallback`: no external model call; useful for testing.
-- `OpenAI-compatible endpoint`: use llama.cpp, Ollama, LM Studio, vLLM, OpenRouter, or
-  another `/v1/chat/completions` server.
-- `Codex CLI`: uses your local Codex login.
-- `Gemini API`: uses a Gemini API key.
-- `OpenAI API`: uses an OpenAI API key.
-
-For a llama.cpp-style local endpoint, set:
-
-```text
-Base URL: http://localhost:2276/v1
-Model: the model name served by llama.cpp
-```
-
-Memory tab:
-
-- Set an Obsidian vault path.
-- Choose an optional workspace subfolder.
-- Browse subfolders and notes.
-- Open notes in Obsidian or folders in Finder.
-
-Profile tab:
-
-- Add your own user profile.
-- Review or delete agent-inferred traits.
-
-App tab:
-
-- Check for stable app updates and install them after confirmation.
-
-## Useful Environment Variables
-
-- `SANKALP_HOST`: bind host, default `127.0.0.1`
-- `SANKALP_PORT`: bind port, default `8765`
-- `SANKALP_STATE_DIR`: runtime state, default `~/.sankalp`
-- `SANKALP_OBSIDIAN_VAULT`: Markdown memory vault, default `~/.sankalp/obsidian-vault`
-- `SANKALP_MODEL`: default OpenAI model, default `gpt-5.5`
-- `OPENAI_API_KEY`: enables OpenAI-backed responses
-- `GEMINI_API_KEY`: optional fallback for Gemini when no key is saved in UI settings
-- `SANKALP_ALLOW_TERMINAL`: set to `1` to allow `/sh ...` commands
-- `SANKALP_ALLOWED_ROOTS`: path list for file tools, separated by `:`
-
-Provider settings and API keys are stored locally in:
-
-```text
-~/.sankalp/settings.json
-```
-
-## Chat Commands
-
-Inside chat:
-
-- `/remember <fact>` appends to the memory inbox
-- `/fetch https://example.com` fetches and extracts page text
-- `/read path/to/file` reads a file within allowed roots
-- `/append path/to/file :: text` appends text within allowed roots
-- `/sh command` runs a terminal command only when terminal access is enabled
-
-## Data Locations
-
-Runtime state:
-
-```text
-~/.sankalp/
-```
-
-Agent home layout:
-
-```text
-~/.sankalp/
-  app/
-  settings.json
-  SOUL.md
-  state.db
-  sessions/
-  skills/
-  hooks/
-  logs/
-  cache/
-  sandboxes/
-  memories/
-  obsidian-vault/
-  webui/
-  tools/
-```
-
-Default memory vault:
-
-```text
-~/.sankalp/obsidian-vault/
-```
-
-Memory follows an append-first structure:
-
-```text
-People/you.md
-Projects/
-Sessions/
-Skills/
-Inbox/
-Decisions/
-```
-
-## macOS Full Disk Access
-
-If your Obsidian vault is under protected locations such as `~/Documents`, macOS may block
-access when Sankalp is launched from a terminal. Grant Full Disk Access to the app or
-terminal process that runs Sankalp.
-
-The Memory tab has a Full Disk Access shortcut when macOS support is available.
-
-## Development Checks
-
-Backend checks:
-
-```sh
-python3 -m unittest tests/test_sessions.py tests/test_settings.py
-```
-
-WebUI checks:
+In another terminal:
 
 ```sh
 cd web
 source ~/.nvm/nvm.sh
-nvm use
-npm run check
-npm run build
+nvm install 24
+nvm use 24
+npm install
+npm run dev
 ```
 
-## Docs
+## Open Sankalp
+
+- Installed app mode: `http://127.0.0.1:8765`
+- WebUI dev mode: `http://127.0.0.1:5173`
+
+## First-Time Setup
+
+Open `Settings` in the app and configure:
+
+- Provider and model
+- Obsidian vault path (optional but recommended)
+- Profile preferences
+
+## Data and Privacy
+
+Sankalp is local-first by default. Runtime data is stored under:
+
+- `~/.sankalp/` (macOS/Linux)
+- `%USERPROFILE%\.sankalp\` (Windows)
+
+## Useful Commands
+
+- `/remember <text>`: save a memory note
+- `/research <query>`: web research flow
+- `/fetch <url>`: fetch and summarize page content
+
+## Documentation
+
+Detailed feature behavior, architecture, and advanced setup will be hosted in the docs site.
+For now:
 
 - [Architecture](docs/architecture.md)
 - [Features](docs/features.md)
-- [MVP spec](docs/MVP_SPEC.md)
-- [WebUI notes](web/README.md)
+- [MVP Spec](docs/MVP_SPEC.md)
