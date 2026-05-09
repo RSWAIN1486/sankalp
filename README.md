@@ -1,6 +1,6 @@
 # Sankalp
 
-Sankalp is a local-first AI assistant with a professional WebUI, auditable tool activity, and Obsidian-compatible memory.
+Sankalp is a local-first AI assistant with a minimalist WebUI, auditable tool activity, and Obsidian-compatible memory.
 
 ## What This Repo Contains
 
@@ -13,6 +13,9 @@ Sankalp is a local-first AI assistant with a professional WebUI, auditable tool 
 - Multiple providers (`local`, `local_openai`, `codex`, `gemini`, `openai`).
 - Obsidian-compatible memory with `/remember` and memory search.
 - Tooling for web fetch/search and safe local file actions.
+- Slash commands and capability discovery in `Settings -> Capabilities`.
+- Experimental macOS Computer Use via `/computer ...` (app listing, accessibility tree/screenshot
+  inspection, explicit click/type/key/scroll actions, and bounded `/computer task ...` loop).
 - Local installed app flow with in-app update checks.
 
 ## Install
@@ -73,6 +76,16 @@ Sankalp is local-first by default. Runtime data is stored under:
 - `/remember <text>`: save a memory note
 - `/research <query>`: web research flow
 - `/fetch <url>`: fetch and summarize page content
+- `/computer permissions [accessibility|screen]`: open required macOS privacy settings
+- `/computer <action>`: run experimental macOS computer-use actions
+
+## Experimental (macOS Computer Use)
+
+- Currently macOS-only and experimental.
+- Requires Accessibility and Screen Recording permissions.
+- In dev mode, permissions are granted to the launching app (for example Terminal/iTerm), not
+  automatically to `Sankalp.app`.
+- High-impact/sensitive actions are intentionally paused for user confirmation.
 
 ## Documentation
 
