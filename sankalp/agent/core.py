@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import re
+import shlex
 import threading
 import time
 from dataclasses import asdict
 from typing import Any
 
 from sankalp.agent.llm import LLMAdapter
+from sankalp.computer import ComputerTaskRunner
 from sankalp.memory import ObsidianMemory
 from sankalp.sessions import Session, SessionStore
 from sankalp.sessions.store import title_from_query
@@ -213,6 +215,9 @@ class Agent:
             query = content[len("/research "):].strip()
             return self._run_web_research(session, query, options)
 
+        if lowered == "/computer" or lowered.startswith("/computer "):
+            return self._route_computer_command(session, content, options)
+
         if lowered.startswith("/read "):
             path = content[len("/read "):].strip()
             result = self.tools.call("file_read", path=path)
@@ -242,6 +247,182 @@ class Agent:
             return f"Command blocked or failed: {result.output}"
 
         return None
+
+    def _route_computer_command(self, session: Session, content: str, options: dict[str, Any]) -> str:
+        body = content[len("/computer"):].strip()
+        if not body or body in {"status", "help"}:
+            result = self.tools.call("computer_status")
+            session.tool_calls.append(asdict(result))
+            if body == "help":
+                return self._computer_help(result.output)
+            return self._format_computer_status(result.output)
+
+        lowered = body.lower()
+        if lowered in {"apps", "list", "list apps"}:
+            result = self.tools.call("computer_list_apps")
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_apps(result)
+
+        if lowered.startswith("permissions"):
+            parts = self._split_computer_args(body)
+            target = parts[1] if len(parts) > 1 else "accessibility"
+            result = self.tools.call("computer_open_permissions", target=target)
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_action(result, success=f"Opened macOS `{target}` permission settings.")
+
+        if lowered.startswith("task "):
+            instruction = body[len("task "):].strip()
+            if not instruction:
+                return "Use `/computer task <what you want done>`."
+            runner = ComputerTaskRunner(self.tools, self.llm)
+            answer, results = runner.run(instruction, options)
+            session.tool_calls.extend(asdict(item) for item in results)
+            return answer
+
+        if lowered.startswith("open "):
+            app = body[len("open "):].strip()
+            result = self.tools.call("computer_open_app", app=app)
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_action(result, success=f"Opened `{app}`.")
+
+        if lowered.startswith("inspect "):
+            app = body[len("inspect "):].strip()
+            result = self.tools.call("computer_inspect", app=app, max_depth=3, max_children=60)
+            session.tool_calls.append(asdict(result))
+            if result.status == "ok":
+                return f"Inspected `{app}`.\n\n```plaintext\n{result.output.get('tree', '').strip()}\n```"
+            return f"Inspect failed: {result.output}"
+
+        if lowered == "screenshot":
+            result = self.tools.call("computer_screenshot")
+            session.tool_calls.append(asdict(result))
+            if result.status == "ok":
+                return f"Captured screenshot at `{result.output.get('path')}`."
+            return f"Screenshot failed: {result.output}"
+
+        if lowered.startswith("click "):
+            return self._route_computer_click(session, body[len("click "):].strip())
+
+        if lowered.startswith("type "):
+            return self._route_computer_type(session, body[len("type "):], mode="type")
+
+        if lowered.startswith("set "):
+            return self._route_computer_type(session, body[len("set "):], mode="set")
+
+        if lowered.startswith("key "):
+            parts = self._split_computer_args(body[len("key "):].strip())
+            if len(parts) < 2:
+                return "Use `/computer key <app> <key>`."
+            app, key = parts[0], parts[1]
+            result = self.tools.call("computer_press_key", app=app, key=key)
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_action(result, success=f"Pressed `{key}` in `{app}`.")
+
+        if lowered.startswith("scroll "):
+            parts = self._split_computer_args(body[len("scroll "):].strip())
+            if len(parts) < 2:
+                return "Use `/computer scroll <app> <down|up|left|right> [pages]`."
+            pages = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
+            result = self.tools.call("computer_scroll", app=parts[0], direction=parts[1], pages=pages)
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_action(result, success=f"Scrolled `{parts[1]}` in `{parts[0]}`.")
+
+        return self._computer_help({})
+
+    def _route_computer_click(self, session: Session, body: str) -> str:
+        parts = self._split_computer_args(body)
+        if len(parts) < 2:
+            return "Use `/computer click <app> <element_path>` or `/computer click screen <x>,<y>`."
+        app, target = parts[0], parts[1]
+        coords = self._parse_computer_coords(target)
+        if app.lower() == "screen" and coords:
+            result = self.tools.call("computer_click", x=coords[0], y=coords[1])
+        elif coords:
+            result = self.tools.call("computer_click", app=app, x=coords[0], y=coords[1])
+        else:
+            result = self.tools.call("computer_click", app=app, element_path=target)
+        session.tool_calls.append(asdict(result))
+        return self._format_computer_action(result, success=f"Clicked `{target}`.")
+
+    def _route_computer_type(self, session: Session, body: str, mode: str) -> str:
+        if "::" not in body:
+            return f"Use `/computer {mode} <app> <element_path> :: <text>`."
+        left, text = body.split("::", 1)
+        parts = self._split_computer_args(left.strip())
+        if len(parts) < 1:
+            return f"Use `/computer {mode} <app> [element_path] :: <text>`."
+        app = parts[0]
+        element_path = parts[1] if len(parts) > 1 else ""
+        tool = "computer_type_text" if mode == "type" else "computer_set_value"
+        result = self.tools.call(tool, app=app, element_path=element_path, text=text.strip()) if mode == "type" else self.tools.call(
+            tool,
+            app=app,
+            element_path=element_path,
+            value=text.strip(),
+        )
+        session.tool_calls.append(asdict(result))
+        action = "Typed into" if mode == "type" else "Set"
+        return self._format_computer_action(result, success=f"{action} `{element_path}` in `{app}`.")
+
+    def _split_computer_args(self, value: str) -> list[str]:
+        try:
+            return shlex.split(value)
+        except ValueError:
+            return value.split()
+
+    def _parse_computer_coords(self, target: str) -> tuple[int, int] | None:
+        match = re.fullmatch(r"\s*(\d+)\s*,\s*(\d+)\s*", target)
+        if not match:
+            return None
+        return int(match.group(1)), int(match.group(2))
+
+    def _format_computer_status(self, output: dict[str, Any]) -> str:
+        available = "available" if output.get("available") else "not available"
+        permissions = output.get("permissions") or {}
+        return (
+            f"Computer Use is `{available}` with `{output.get('backend', 'unknown')}`.\n\n"
+            f"- macOS: `{output.get('is_macos')}`\n"
+            f"- osascript: `{(output.get('tools') or {}).get('osascript', '')}`\n"
+            f"- screencapture: `{(output.get('tools') or {}).get('screencapture', '')}`\n"
+            f"- Accessibility: {permissions.get('accessibility', 'unknown')}\n"
+            f"- Screen Recording: {permissions.get('screen_recording', 'unknown')}\n"
+            f"- Dev mode permission target: {permissions.get('dev_mode_grant_to', 'launching terminal')}\n"
+            f"- Installed app permission target: {permissions.get('installed_app_grant_to', 'Sankalp.app')}"
+        )
+
+    def _format_computer_apps(self, result: Any) -> str:
+        if result.status != "ok":
+            return f"Could not list controllable apps: {result.output}"
+        apps = result.output.get("apps") or []
+        if not apps:
+            return "No visible apps were reported."
+        return "Computer Use can currently see these apps:\n\n" + "\n".join(f"- {app}" for app in apps)
+
+    def _format_computer_action(self, result: Any, success: str) -> str:
+        if result.status == "ok":
+            return success
+        return f"Computer action failed: {result.output}"
+
+    def _computer_help(self, status: dict[str, Any]) -> str:
+        prefix = ""
+        if status:
+            prefix = self._format_computer_status(status) + "\n\n"
+        return prefix + (
+            "Computer Use commands:\n\n"
+            "- `/computer apps`\n"
+            "- `/computer permissions [accessibility|screen]`\n"
+            "- `/computer open <app>`\n"
+            "- `/computer inspect <app>`\n"
+            "- `/computer screenshot`\n"
+            "- `/computer click <app> <element_path>` or `/computer click screen <x>,<y>`\n"
+            "- `/computer type <app> [element_path] :: <text>`\n"
+            "- `/computer set <app> <element_path> :: <text>`\n"
+            "- `/computer key <app> <Return|Tab|Escape|Command-L>`\n"
+            "- `/computer scroll <app> <down|up|left|right> [pages]`\n"
+            "- `/computer task <low-risk instruction>`"
+            "\n\nIn dev mode, grant macOS permissions to the app that launched the dev server, usually Terminal or iTerm. "
+            "Sankalp.app appears in Privacy settings only when you run the installed app bundle."
+        )
 
     def _is_obsidian_save_request(self, lowered: str) -> bool:
         explicit_save_verbs = ["save", "document", "remember", "store", "write down"]
@@ -500,6 +681,23 @@ class Agent:
             if result.status == "ok":
                 return f"Read `{result.output['path']}`.\n\n{result.output['text']}"
             return f"Read failed: {result.output}"
+        if tool == "computer_status":
+            result = self.tools.call("computer_status")
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_status(result.output)
+        if tool == "computer_list_apps":
+            result = self.tools.call("computer_list_apps")
+            session.tool_calls.append(asdict(result))
+            return self._format_computer_apps(result)
+        if tool == "computer_inspect":
+            app = str(arguments.get("app") or "").strip()
+            if not app:
+                return None
+            result = self.tools.call("computer_inspect", app=app, max_depth=3, max_children=60)
+            session.tool_calls.append(asdict(result))
+            if result.status == "ok":
+                return f"Inspected `{app}`.\n\n```plaintext\n{result.output.get('tree', '').strip()}\n```"
+            return f"Inspect failed: {result.output}"
         return None
 
     def _llm_selectable_tools(self) -> list[dict[str, Any]]:
@@ -523,6 +721,21 @@ class Agent:
                 "name": "file_read",
                 "description": "Read a local file path when the user asks to inspect that file.",
                 "arguments": {"path": "path inside an allowed root"},
+            },
+            {
+                "name": "computer_status",
+                "description": "Check whether experimental macOS Computer Use is available and what permissions it needs.",
+                "arguments": {},
+            },
+            {
+                "name": "computer_list_apps",
+                "description": "List visible macOS apps that Computer Use may be able to inspect or control.",
+                "arguments": {},
+            },
+            {
+                "name": "computer_inspect",
+                "description": "Inspect one named macOS app and return its accessibility tree for visible UI controls.",
+                "arguments": {"app": "app name such as Spotify, Finder, Chrome, or Obsidian"},
             },
         ]
 

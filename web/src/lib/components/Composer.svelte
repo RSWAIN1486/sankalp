@@ -6,21 +6,27 @@
   let commandIndex = 0;
   let slashQuery = "";
   let slashVisible = false;
-  let slashMatches: Array<{ command: string; description: string }> = [];
+  let slashMatches: Array<{ command: string; description: string; insertText: string }> = [];
 
-  const slashCommands = [
-    { command: "/remember ", description: "Save a fact into memory inbox" },
-    { command: "/fetch ", description: "Fetch a URL and read text" },
-    { command: "/read ", description: "Read a local file path" },
-    { command: "/append ", description: "Append text: /append path :: text" },
-    { command: "/sh ", description: "Run terminal command (if enabled)" }
+  const fallbackSlashCommands = [
+    { command: "/remember <fact>", description: "Save a fact into memory inbox" },
+    { command: "/fetch <url>", description: "Fetch a URL and read text" },
+    { command: "/research <query>", description: "Run web research for a topic" },
+    { command: "/read <path>", description: "Read a local file path" },
+    { command: "/append <path> :: <text>", description: "Append text into a local file" },
+    { command: "/sh <command>", description: "Run terminal command (if enabled)" }
   ];
 
   $: void ensureProviderModels($chatState.composer.provider);
   $: slashQuery = $chatState.draft.startsWith("/") ? $chatState.draft.slice(1).toLowerCase() : "";
   $: slashVisible = $chatState.draft.startsWith("/");
+  $: slashCommands = ($chatState.capabilities.commands.length ? $chatState.capabilities.commands : fallbackSlashCommands)
+    .map((item) => ({
+      ...item,
+      insertText: commandInsertText(item.command)
+    }));
   $: slashMatches = slashVisible
-    ? slashCommands.filter((item) => item.command.slice(1).toLowerCase().startsWith(slashQuery))
+    ? slashCommands.filter((item) => commandMatches(item.command, slashQuery))
     : [];
   $: if (commandIndex >= slashMatches.length) commandIndex = 0;
 
@@ -36,8 +42,20 @@
     }
   }
 
-  function applyCommand(command: string) {
-    setDraft(command);
+  function applyCommand(command: { insertText: string }) {
+    setDraft(command.insertText);
+  }
+
+  function commandMatches(command: string, query: string) {
+    const normalizedCommand = command.slice(1).toLowerCase();
+    return normalizedCommand.startsWith(query) || normalizedCommand.includes(` ${query}`);
+  }
+
+  function commandInsertText(command: string) {
+    const withoutPlaceholders = command.replace(/\s*(<[^>]+>|\[[^\]]+\]).*$/, "");
+    const expectsMoreInput = /(<[^>]+>|\[[^\]]+\]|::)/.test(command);
+    if (expectsMoreInput) return `${withoutPlaceholders.trimEnd()} `;
+    return withoutPlaceholders;
   }
 </script>
 
@@ -60,7 +78,7 @@
       }
       if (slashMatches.length > 0 && (event.key === "Tab" || (event.key === "Enter" && !event.metaKey && !event.ctrlKey))) {
         event.preventDefault();
-        applyCommand(slashMatches[commandIndex].command);
+        applyCommand(slashMatches[commandIndex]);
         return;
       }
       if (event.key === "Enter" && !event.shiftKey) {
@@ -75,7 +93,7 @@
         <button
           class:active={idx === commandIndex}
           type="button"
-          on:click={() => applyCommand(item.command)}
+          on:click={() => applyCommand(item)}
         >
           <code>{item.command}</code>
           <span>{item.description}</span>

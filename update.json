@@ -1,9 +1,9 @@
 {
-  "version": "0.1.9",
+  "version": "0.1.10",
   "channel": "stable",
-  "title": "Web Research Tool Integration",
+  "title": "Experimental Computer Use for Mac OS",
   "notes": [
-    "Implemented web research tool with Firecrawl integration and refined Obsidian folder classification logic"
+    "Maintenance and quality improvements"
   ],
   "minimum_supported_version": "0.1.0"
 }

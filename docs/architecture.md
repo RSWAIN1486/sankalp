@@ -20,6 +20,8 @@ durable backend-state direction.
 - `sankalp/sessions/store.py`: JSON session persistence.
 - `sankalp/memory/obsidian.py`: vault reads/writes, memory search helpers, open-note helpers.
 - `sankalp/tools/registry.py`: explicit tool catalog and auditable tool-call logging.
+- `sankalp/computer/*`: experimental macOS Computer Use harness, action safety policy, and
+model-guided task loop.
 - `sankalp/skills/registry.py`: folder-backed skill discovery under `~/.sankalp/skills`.
 - `sankalp/updater.py`: release-manifest update checks and confirmed installer launch.
 
@@ -30,6 +32,10 @@ durable backend-state direction.
 - State layer: `web/src/lib/stores/chat.ts`.
 - API layer: `web/src/lib/services/api.ts` (typed fetch + SSE parsing).
 - Browser storage layer: `web/src/lib/storage/db.ts` (Dexie for local UI cache/preferences).
+- Slash-command picker: loaded from backend `/api/capabilities` command metadata, with a small
+frontend fallback for offline startup.
+- App shell layout owns the viewport; the sidebar/session list and message transcript are internal
+scroll regions while the header, settings entry point, and composer stay fixed in place.
 
 ## Persistence Model
 
@@ -45,6 +51,10 @@ durable backend-state direction.
 `reasoning`, `delta`, `session`, `done`) -> session + tool log persistence.
 - Tool routing: deterministic command/intent routing first; safe read/search fallback via LLM tool
 selection; write/terminal actions stay explicit.
+- Computer Use flow: `/computer ...` commands call the macOS harness for app listing, screenshots,
+accessibility-tree inspection, and explicit click/type/key actions. `/computer task ...` runs a
+bounded experimental loop that observes, asks the selected model for one structured action, checks
+policy, executes through the tool registry, and repeats until done/blocked/confirmed.
 - Memory flow: `/remember` and natural save intents write to Obsidian with routing/fallback logic;
 explicit memory-find intents route through `memory_search` first.
 - Title flow: immediate fallback title, then async global smallest-model title generation
@@ -62,6 +72,11 @@ Obsidian onboarding/auto-detection.
 - Loopback-only HTTP by default.
 - File tools limited to configured roots.
 - Terminal tool disabled unless explicitly enabled.
+- Computer Use is experimental, macOS-only, and requires user-granted Accessibility and Screen
+Recording permissions. In dev mode those permissions belong to the launching app, usually Terminal
+or iTerm; `Sankalp.app` is the permission target only when running the installed bundle. The policy
+layer pauses before actions that may send, submit, delete, purchase, change settings, or handle
+sensitive data.
 - Tool-call audit trail (inputs, outputs, status, timestamps).
 
 ## Architecture Diagrams
@@ -75,6 +90,7 @@ flowchart LR
   S --> A[Agent Core]
   A --> P[LLM Providers]
   A --> T[Tool Registry]
+  T --> CU[Computer Use Harness]
   A --> M[Obsidian Memory]
   A --> J[Session Store JSON]
   W --> D[Dexie IndexedDB UI Cache]
@@ -89,6 +105,8 @@ flowchart TD
   API --> TURN[Agent.turn_stream]
   TURN --> ROUTE{Tool or LLM}
   ROUTE -->|Tool| TOOL[Run Tool + Log]
+  TOOL --> CU{Computer Use?}
+  CU -->|macOS| OBS[Observe + Act]
   ROUTE -->|LLM| LLM[Provider Stream]
   TOOL --> EVT[SSE Events]
   LLM --> EVT

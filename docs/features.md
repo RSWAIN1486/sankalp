@@ -8,6 +8,8 @@ This file is the minimal, user-facing feature map for the current product.
 - Streaming chat responses in WebUI (status/reasoning/content/session events).
 - Edit-and-resend branching for earlier user turns.
 - Rename, export, and delete conversations from the sidebar.
+- Fixed app chrome: sidebar, settings controls, and composer stay in place while message history
+scrolls independently.
 - Async auto-title generation with global smallest-model routing; manual titles are preserved.
 
 ## Composer and Inputs
@@ -16,7 +18,7 @@ This file is the minimal, user-facing feature map for the current product.
 - Provider-scoped model memory in WebUI (switching provider keeps its own model choice).
 - Attach `.md`, `.txt`, `.pdf`, and images.
 - Enter to send, Shift+Enter for newline.
-- Slash-command picker when typing `/`.
+- Slash-command picker when typing `/`, backed by the backend capabilities command catalog.
 
 ## Providers
 
@@ -39,6 +41,15 @@ This file is the minimal, user-facing feature map for the current product.
 - Tool calls are logged in session activity for auditability.
 - `/research <query>` for web discovery + synthesis with source links.
 - `/fetch <url>` for readable-content extraction with provider-aware fallback.
+- Experimental macOS Computer Use via `/computer ...`: list visible apps, inspect accessibility
+trees, capture screenshots, open apps, click/type/key/scroll explicit targets, and run a bounded
+low-risk `/computer task <instruction>` loop.
+- `/computer permissions [accessibility|screen]` opens the macOS Privacy panes needed by the
+experimental harness.
+- In dev mode, macOS permissions are granted to the launching app such as Terminal, iTerm, or
+Antigravity; `Sankalp.app` appears only when running the installed app bundle.
+- Computer Use pauses before high-impact actions such as sending, deleting, purchasing, changing
+settings, or handling passwords, OTPs, API keys, and other sensitive data.
 
 ## Skills and Capabilities
 

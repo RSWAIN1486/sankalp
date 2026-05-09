@@ -1,7 +1,7 @@
 import { derived, get, writable } from "svelte/store";
 import { api, streamChat } from "$lib/services/api";
 import { db, loadComposerPreference, loadStreamDiagnosticsEnabled, saveComposerPreference, saveStreamDiagnosticsEnabled } from "$lib/storage/db";
-import type { AppUpdateStatus, ChatMessage, ComposerOptions, ModelOption, ProviderModels, SessionSummary, Settings, StreamDiagnostics, StreamEvent, ToolCall } from "$lib/types";
+import type { AppUpdateStatus, Capabilities, ChatMessage, ComposerOptions, ModelOption, ProviderModels, SessionSummary, Settings, StreamDiagnostics, StreamEvent, ToolCall } from "$lib/types";
 
 type ModelCatalogEntry = ProviderModels & {
   loading?: boolean;
@@ -21,8 +21,9 @@ type ChatState = {
   composer: ComposerOptions;
   composerModelsByProvider: Record<string, string>;
   modelCatalog: Record<string, ModelCatalogEntry>;
+  capabilities: Capabilities;
   settingsOpen: boolean;
-  settingsTab: "provider" | "memory" | "profile" | "app" | "capabilities";
+  settingsTab: "provider" | "research" | "memory" | "profile" | "app" | "capabilities";
   sidebarCollapsed: boolean;
   appUpdate: AppUpdateStatus | null;
   updateBannerDismissed: boolean;
@@ -58,6 +59,7 @@ const initialState: ChatState = {
   composer: defaultComposer,
   composerModelsByProvider: {},
   modelCatalog: {},
+  capabilities: { skills: [], tools: [], commands: [] },
   settingsOpen: false,
   settingsTab: "provider",
   sidebarCollapsed: false,
@@ -92,9 +94,10 @@ export const composerModelOptions = derived(chatState, ($state) => {
 });
 
 export async function initializeChat(): Promise<void> {
-  const [sessionsData, settingsData, preference, streamDiagnosticsEnabled] = await Promise.all([
+  const [sessionsData, settingsData, capabilitiesData, preference, streamDiagnosticsEnabled] = await Promise.all([
     api<{ sessions: SessionSummary[] }>("/api/sessions"),
     api<{ settings: Settings }>("/api/settings"),
+    api<{ capabilities: Capabilities }>("/api/capabilities").catch(() => ({ capabilities: { skills: [], tools: [], commands: [] } })),
     loadComposerPreference(),
     loadStreamDiagnosticsEnabled()
   ]);
@@ -114,6 +117,7 @@ export async function initializeChat(): Promise<void> {
     ...state,
     sessions: sessionsData.sessions || [],
     settings,
+    capabilities: capabilitiesData.capabilities || { skills: [], tools: [], commands: [] },
     composer,
     composerModelsByProvider: modelsByProvider,
     streamDiagnostics: {
@@ -308,11 +312,11 @@ export function toggleSettings(): void {
   chatState.update((state) => ({ ...state, settingsOpen: !state.settingsOpen }));
 }
 
-export function openSettings(tab: "provider" | "memory" | "profile" | "app" | "capabilities" = "provider"): void {
+export function openSettings(tab: "provider" | "research" | "memory" | "profile" | "app" | "capabilities" = "provider"): void {
   chatState.update((state) => ({ ...state, settingsOpen: true, settingsTab: tab }));
 }
 
-export function setSettingsTab(tab: "provider" | "memory" | "profile" | "app" | "capabilities"): void {
+export function setSettingsTab(tab: "provider" | "research" | "memory" | "profile" | "app" | "capabilities"): void {
   chatState.update((state) => ({ ...state, settingsTab: tab }));
 }
 

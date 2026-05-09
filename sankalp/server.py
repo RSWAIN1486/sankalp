@@ -59,6 +59,17 @@ TOOLS = [
     {"name": "file_read", "description": "Read local files inside allowed roots."},
     {"name": "file_append", "description": "Append text to local files inside allowed roots."},
     {"name": "terminal", "description": "Run terminal commands when explicitly enabled by settings/env."},
+    {"name": "computer_status", "description": "Report experimental macOS Computer Use availability and permission requirements."},
+    {"name": "computer_list_apps", "description": "List visible macOS apps available to the Computer Use harness."},
+    {"name": "computer_inspect", "description": "Inspect a macOS app accessibility tree for visible controls."},
+    {"name": "computer_screenshot", "description": "Capture the current macOS screen for Computer Use observation."},
+    {"name": "computer_open_app", "description": "Open or activate a macOS application."},
+    {"name": "computer_open_permissions", "description": "Open macOS Privacy settings for Computer Use permissions."},
+    {"name": "computer_click", "description": "Click an accessibility element path or screen coordinate."},
+    {"name": "computer_type_text", "description": "Click an accessibility element and type text into it."},
+    {"name": "computer_set_value", "description": "Set the value of an accessibility element when supported."},
+    {"name": "computer_press_key", "description": "Press a keyboard key or key combination in an app."},
+    {"name": "computer_scroll", "description": "Scroll an app using page or arrow key events."},
 ]
 
 COMMANDS = [
@@ -68,6 +79,12 @@ COMMANDS = [
     {"command": "/read <path>", "description": "Read a local file from allowed roots."},
     {"command": "/append <path> :: <text>", "description": "Append text into a local file."},
     {"command": "/sh <command>", "description": "Run a terminal command when terminal access is enabled."},
+    {"command": "/computer apps", "description": "List visible apps that Computer Use can currently see."},
+    {"command": "/computer permissions [accessibility|screen]", "description": "Open macOS Privacy settings needed for Computer Use."},
+    {"command": "/computer inspect <app>", "description": "Inspect one app and return visible accessibility element paths."},
+    {"command": "/computer click <app> <path>", "description": "Click an inspected accessibility element path."},
+    {"command": "/computer type <app> [path] :: <text>", "description": "Type text into the focused app or an inspected accessibility element."},
+    {"command": "/computer task <instruction>", "description": "Run the experimental low-risk Computer Use loop."},
 ]
 
 

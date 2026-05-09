@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from sankalp.computer import MacOSComputerUse
 from sankalp.config import ALLOW_TERMINAL, allowed_roots
 from sankalp.memory import ObsidianMemory
 from sankalp.settings import load_settings
@@ -18,6 +19,7 @@ class ToolRegistry:
     def __init__(self, memory: ObsidianMemory):
         self.memory = memory
         self.roots = allowed_roots()
+        self.computer = MacOSComputerUse()
 
     def call(self, name: str, **kwargs: Any) -> ToolResult:
         if name == "memory_remember":
@@ -34,6 +36,30 @@ class ToolRegistry:
             return self.file_append(**kwargs)
         if name == "terminal":
             return self.terminal(**kwargs)
+        if name == "computer_status":
+            return self.computer_status(**kwargs)
+        if name == "computer_list_apps":
+            return self.computer_list_apps(**kwargs)
+        if name == "computer_open_app":
+            return self.computer_open_app(**kwargs)
+        if name == "computer_open_permissions":
+            return self.computer_open_permissions(**kwargs)
+        if name == "computer_inspect":
+            return self.computer_inspect(**kwargs)
+        if name == "computer_screenshot":
+            return self.computer_screenshot(**kwargs)
+        if name == "computer_click":
+            return self.computer_click(**kwargs)
+        if name == "computer_type_text":
+            return self.computer_type_text(**kwargs)
+        if name == "computer_set_value":
+            return self.computer_set_value(**kwargs)
+        if name == "computer_press_key":
+            return self.computer_press_key(**kwargs)
+        if name == "computer_scroll":
+            return self.computer_scroll(**kwargs)
+        if name == "computer_wait":
+            return self.computer_wait(**kwargs)
         return ToolResult.run(name, kwargs, {"error": f"unknown tool: {name}"}, status="error")
 
     def memory_remember(self, text: str, source: str = "chat", folder: str | None = None, note: str | None = None) -> ToolResult:
@@ -132,6 +158,105 @@ class ToolRegistry:
             )
         except Exception as exc:
             return ToolResult.run("terminal", {"command": command}, {"error": str(exc)}, "error", started)
+
+    def computer_status(self) -> ToolResult:
+        started = time.time()
+        return ToolResult.run("computer_status", {}, self.computer.status(), started_at=started)
+
+    def computer_list_apps(self) -> ToolResult:
+        started = time.time()
+        output = self.computer.list_apps()
+        status = "ok" if not output.get("error") else "error"
+        return ToolResult.run("computer_list_apps", {}, output, status, started)
+
+    def computer_open_app(self, app: str) -> ToolResult:
+        started = time.time()
+        output = self.computer.open_app(app)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run("computer_open_app", {"app": app}, output, status, started)
+
+    def computer_open_permissions(self, target: str = "accessibility") -> ToolResult:
+        started = time.time()
+        output = self.computer.open_permissions(target)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run("computer_open_permissions", {"target": target}, output, status, started)
+
+    def computer_inspect(self, app: str, max_depth: int = 3, max_children: int = 45) -> ToolResult:
+        started = time.time()
+        output = self.computer.inspect_app(app, max_depth=max_depth, max_children=max_children)
+        status = "ok" if not output.get("error") else "error"
+        return ToolResult.run(
+            "computer_inspect",
+            {"app": app, "max_depth": max_depth, "max_children": max_children},
+            output,
+            status,
+            started,
+        )
+
+    def computer_screenshot(self) -> ToolResult:
+        started = time.time()
+        output = self.computer.screenshot()
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run("computer_screenshot", {}, output, status, started)
+
+    def computer_click(self, app: str = "", element_path: str = "", x: int | None = None, y: int | None = None) -> ToolResult:
+        started = time.time()
+        output = self.computer.click(app=app, element_path=element_path, x=x, y=y)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run(
+            "computer_click",
+            {"app": app, "element_path": element_path, "x": x, "y": y},
+            output,
+            status,
+            started,
+        )
+
+    def computer_type_text(self, app: str, element_path: str, text: str) -> ToolResult:
+        started = time.time()
+        output = self.computer.type_text(app, element_path, text)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run(
+            "computer_type_text",
+            {"app": app, "element_path": element_path, "chars": len(text)},
+            output,
+            status,
+            started,
+        )
+
+    def computer_set_value(self, app: str, element_path: str, value: str) -> ToolResult:
+        started = time.time()
+        output = self.computer.set_value(app, element_path, value)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run(
+            "computer_set_value",
+            {"app": app, "element_path": element_path, "chars": len(value)},
+            output,
+            status,
+            started,
+        )
+
+    def computer_press_key(self, app: str, key: str) -> ToolResult:
+        started = time.time()
+        output = self.computer.press_key(app, key)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run("computer_press_key", {"app": app, "key": key}, output, status, started)
+
+    def computer_scroll(self, app: str, direction: str = "down", pages: int = 1) -> ToolResult:
+        started = time.time()
+        output = self.computer.scroll(app, direction=direction, pages=pages)
+        status = "ok" if output.get("ok") else "error"
+        return ToolResult.run(
+            "computer_scroll",
+            {"app": app, "direction": direction, "pages": pages},
+            output,
+            status,
+            started,
+        )
+
+    def computer_wait(self, seconds: float = 1.0) -> ToolResult:
+        started = time.time()
+        output = self.computer.wait(seconds)
+        return ToolResult.run("computer_wait", {"seconds": seconds}, output, started_at=started)
 
     def _resolve_allowed(self, path: str) -> Path | None:
         candidate = Path(path).expanduser()
