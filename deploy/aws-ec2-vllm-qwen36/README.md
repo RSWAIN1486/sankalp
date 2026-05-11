@@ -14,7 +14,8 @@ Recommended first target:
 
 The default compose config keeps the vision encoder enabled so Sankalp Computer Use can send
 screenshots to the model. It starts with a conservative `MAX_MODEL_LEN=32768`. Raise context only
-after the first endpoint is stable.
+after the first endpoint is stable. Qwen thinking mode is disabled by default at the vLLM server
+layer so OpenAI-compatible clients such as Sankalp receive normal `message.content`.
 
 ## Security Model
 
@@ -162,6 +163,8 @@ If you hit OOM:
 - Keep `MAX_NUM_SEQS=1`
 - For text-only usage, add `--language-model-only` to `docker-compose.yml`; this disables
   vision/screenshot input and can free memory
+- If responses return `content: null` with only a `reasoning` field, restart with the current
+  compose file so `--default-chat-template-kwargs '{"enable_thinking": false}'` is active
 
 ## Operations
 

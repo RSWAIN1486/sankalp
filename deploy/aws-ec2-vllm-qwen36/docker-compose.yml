@@ -43,5 +43,7 @@ services:
       - "--enable-prefix-caching"
       - "--reasoning-parser"
       - "qwen3"
+      - "--default-chat-template-kwargs"
+      - '{"enable_thinking": false}'
       - "--api-key"
       - "${VLLM_API_KEY}"
