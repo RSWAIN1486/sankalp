@@ -19,6 +19,8 @@ durable backend-state direction.
 - `sankalp/agent/llm.py`: provider adapters (`local`, `local_openai`, `codex`, `gemini`, `openai`).
 - `deploy/cloud-run-vllm-qwen36/`: optional Cloud Run GPU deployment scaffold for a private
 OpenAI-compatible vLLM endpoint backed by `Qwen/Qwen3.6-27B-FP8`.
+- `deploy/aws-ec2-vllm-qwen36/`: optional AWS EC2 G6e deployment scaffold for exposing the same
+vLLM endpoint through an SSH tunnel or a restricted security-group rule.
 - `sankalp/sessions/store.py`: JSON session persistence.
 - `sankalp/memory/obsidian.py`: vault reads/writes, memory search helpers, open-note helpers.
 - `sankalp/tools/registry.py`: explicit tool catalog and auditable tool-call logging.
