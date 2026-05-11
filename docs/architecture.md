@@ -17,6 +17,8 @@ durable backend-state direction.
 - `sankalp/server.py`: loopback server, `/api/*`, SSE chat stream, and installed-app static serving.
 - `sankalp/agent/core.py`: turn orchestration, session updates, tool routing, edit/regenerate flows.
 - `sankalp/agent/llm.py`: provider adapters (`local`, `local_openai`, `codex`, `gemini`, `openai`).
+- `deploy/cloud-run-vllm-qwen36/`: optional Cloud Run GPU deployment scaffold for a private
+OpenAI-compatible vLLM endpoint backed by `Qwen/Qwen3.6-27B-FP8`.
 - `sankalp/sessions/store.py`: JSON session persistence.
 - `sankalp/memory/obsidian.py`: vault reads/writes, memory search helpers, open-note helpers.
 - `sankalp/tools/registry.py`: explicit tool catalog and auditable tool-call logging.
@@ -59,6 +61,10 @@ policy, executes through the tool registry, and repeats until done/blocked/confi
 explicit memory-find intents route through `memory_search` first.
 - Title flow: immediate fallback title, then async global smallest-model title generation
 (provider-agnostic, manual renames preserved).
+- External model flow: Cloud-hosted vLLM endpoints are configured through the existing
+`local_openai`/OpenAI-compatible provider fields. Sankalp keeps tool execution and Computer Use
+local; only model inference, including any screenshot attachments supplied by the user task, is
+sent to the configured endpoint.
 
 ## Packaging and Updates
 

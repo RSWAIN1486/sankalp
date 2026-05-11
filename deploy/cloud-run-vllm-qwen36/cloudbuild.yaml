@@ -1,0 +1,32 @@
+substitutions:
+  _REGION: asia-southeast1
+  _REPOSITORY: sankalp-vllm
+  _IMAGE_NAME: qwen36-vllm
+  _TAG: latest
+  _MODEL_ID: Qwen/Qwen3.6-27B-FP8
+  _VLLM_IMAGE: vllm/vllm-openai:v0.20.1
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - MODEL_ID=${_MODEL_ID}
+      - --build-arg
+      - VLLM_IMAGE=${_VLLM_IMAGE}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:${_TAG}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:${_TAG}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE_NAME}:${_TAG}
+
+options:
+  machineType: E2_HIGHCPU_32
+  diskSizeGb: 500
+
+timeout: 7200s
