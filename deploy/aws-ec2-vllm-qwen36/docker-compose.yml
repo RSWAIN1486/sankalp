@@ -1,6 +1,6 @@
 services:
   vllm:
-    image: vllm/vllm-openai:v0.20.1
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     restart: unless-stopped
     ipc: host
     ports:
@@ -11,7 +11,6 @@ services:
       HF_TOKEN: "${HF_TOKEN:-}"
       VLLM_API_KEY: "${VLLM_API_KEY:?set VLLM_API_KEY in .env}"
       VLLM_NO_USAGE_STATS: "1"
-      VLLM_ENABLE_CUDA_COMPATIBILITY: "1"
     deploy:
       resources:
         reservations:

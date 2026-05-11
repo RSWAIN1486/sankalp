@@ -81,8 +81,13 @@ Set:
 ```text
 HF_TOKEN=<your Hugging Face token>
 VLLM_API_KEY=<a long random API key>
+VLLM_IMAGE=vllm/vllm-openai:latest
 MAX_MODEL_LEN=32768
 ```
+
+If the container restarts immediately with a CUDA error like `unsupported display driver / cuda driver combination`,
+the pinned image and host NVIDIA driver are out of sync. On newer driver branches such as `580.x`, prefer a newer
+`VLLM_IMAGE` instead of an older pinned tag.
 
 Start the server:
 
