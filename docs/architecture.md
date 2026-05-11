@@ -53,6 +53,9 @@ scroll regions while the header, settings entry point, and composer stay fixed i
 
 - Chat flow: WebUI -> `/api/chat/stream` -> agent/tool/provider pipeline -> SSE events (`status`,
 `reasoning`, `delta`, `session`, `done`) -> session + tool log persistence.
+- OpenAI-compatible streaming forwards chat-completion content deltas when available and falls back
+to a non-streaming completion if the upstream stream closes without visible text, preventing blank
+assistant turns from providers with unusual streaming/reasoning output.
 - Tool routing: deterministic command/intent routing first; safe read/search fallback via LLM tool
 selection; write/terminal actions stay explicit.
 - Computer Use flow: `/computer ...` commands call the macOS harness for app listing, screenshots,

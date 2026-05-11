@@ -12,6 +12,66 @@ from sankalp.agent.llm import LLMAdapter
 
 
 class LocalOpenAITests(unittest.TestCase):
+    def test_local_openai_stream_emits_delta_content(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                payload = json.dumps({"id": "stream_test", "choices": [{"delta": {"content": "hello"}}]}).encode("utf-8")
+                return iter([b"data: " + payload + b"\n\n", b"data: [DONE]\n\n"])
+
+        with patch("sankalp.agent.llm.urllib.request.urlopen", return_value=FakeResponse()):
+            events = list(LLMAdapter()._local_openai_stream(
+                {
+                    "local_openai_base_url": "http://127.0.0.1:8000/v1",
+                    "local_openai_model": "stream-model",
+                },
+                [{"role": "user", "content": "hi"}],
+                "",
+            ))
+        deltas = [event["text"] for event in events if event.get("type") == "delta"]
+        self.assertEqual("".join(deltas), "hello")
+        self.assertEqual(events[-1]["response_id"], "stream_test")
+
+    def test_local_openai_stream_falls_back_when_no_content_delta(self):
+        class FakeStreamResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def __iter__(self):
+                payload = json.dumps({"id": "empty_stream", "choices": [{"delta": {"role": "assistant"}}]}).encode("utf-8")
+                return iter([b"data: " + payload + b"\n\n", b"data: [DONE]\n\n"])
+
+        class FakeCompletionResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps({"id": "fallback_completion", "choices": [{"message": {"content": "hello fallback"}}]}).encode("utf-8")
+
+        with patch("sankalp.agent.llm.urllib.request.urlopen", side_effect=[FakeStreamResponse(), FakeCompletionResponse()]):
+            events = list(LLMAdapter()._local_openai_stream(
+                {
+                    "local_openai_base_url": "http://127.0.0.1:8000/v1",
+                    "local_openai_model": "stream-model",
+                },
+                [{"role": "user", "content": "hi"}],
+                "",
+            ))
+        deltas = [event["text"] for event in events if event.get("type") == "delta"]
+        self.assertEqual("".join(deltas), "hello fallback")
+        self.assertEqual(events[-1]["response_id"], "fallback_completion")
+
     def test_gemini_stream_emits_deltas(self):
         class FakeResponse:
             def __enter__(self):

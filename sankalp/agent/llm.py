@@ -604,6 +604,7 @@ class LLMAdapter:
             method="POST",
         )
         response_id = None
+        emitted_text = False
         try:
             with urllib.request.urlopen(request, timeout=180) as response:
                 for event in self._iter_sse_json(response):
@@ -615,10 +616,17 @@ class LLMAdapter:
                     for choice in event.get("choices") or []:
                         delta = (choice.get("delta") or {}).get("content")
                         if isinstance(delta, str) and delta:
+                            emitted_text = True
                             yield {"type": "delta", "text": delta}
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"OpenAI-compatible request failed: HTTP {exc.code} {detail}") from exc
+        if not emitted_text:
+            result = self._local_openai(settings, messages, memory_context, attachments)
+            text = str(result.get("text") or "")
+            if text:
+                yield {"type": "delta", "text": text}
+            response_id = result.get("response_id") or response_id
         yield {"type": "response_id", "response_id": response_id, "provider": "local-openai"}
 
     def _codex(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str) -> dict[str, Any]:
