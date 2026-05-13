@@ -45,8 +45,9 @@ bash scripts/setup_ec2_gpu.sh
 source ~/.bashrc
 ```
 
-The helper installs Miniconda into `~/miniconda3` when missing, runs `conda init bash`, verifies
-`nvidia-smi`, and checks Docker GPU access.
+The helper installs Miniconda into `~/miniconda3` when missing, runs `conda init bash`, accepts the
+Anaconda Terms of Service for the default `pkgs/main` and `pkgs/r` channels, verifies `nvidia-smi`,
+and checks Docker GPU access.
 
 Verify the GPU:
 

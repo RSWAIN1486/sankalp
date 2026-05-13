@@ -33,6 +33,10 @@ install_miniconda() {
   log "Initializing conda for bash"
   "$MINICONDA_HOME/bin/conda" init bash
 
+  log "Accepting Anaconda Terms of Service for default channels"
+  "$MINICONDA_HOME/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+  "$MINICONDA_HOME/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
+
   log "Conda version"
   "$MINICONDA_HOME/bin/conda" --version
 }
@@ -82,6 +86,8 @@ Open a new shell, or run:
 Then verify:
 
   conda --version
+  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
   docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 
 EOF

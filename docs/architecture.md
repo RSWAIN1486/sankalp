@@ -81,8 +81,9 @@ Obsidian onboarding/auto-detection.
 ## Deployment Tooling
 
 - `scripts/setup_ec2_gpu.sh` prepares fresh AWS GPU instances for Sankalp-adjacent model serving:
-it installs Miniconda under `~/miniconda3` when missing, initializes bash shell integration, verifies
-`nvidia-smi`, and checks Docker GPU access before vLLM/video-QA services are started.
+it installs Miniconda under `~/miniconda3` when missing, initializes bash shell integration, accepts
+the default Anaconda channel Terms of Service, verifies `nvidia-smi`, and checks Docker GPU access
+before vLLM/video-QA services are started.
 
 ## Safety and Constraints
 
