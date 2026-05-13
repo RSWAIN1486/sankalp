@@ -78,6 +78,12 @@ sent to the configured endpoint.
 Obsidian onboarding/auto-detection.
 - Updates are manifest-driven (`update.json`) via `/api/app/update`; user confirms update/relaunch.
 
+## Deployment Tooling
+
+- `scripts/setup_ec2_gpu.sh` prepares fresh AWS GPU instances for Sankalp-adjacent model serving:
+it installs Miniconda under `~/miniconda3` when missing, initializes bash shell integration, verifies
+`nvidia-smi`, and checks Docker GPU access before vLLM/video-QA services are started.
+
 ## Safety and Constraints
 
 - Loopback-only HTTP by default.

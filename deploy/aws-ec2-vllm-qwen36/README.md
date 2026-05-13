@@ -38,6 +38,16 @@ SSH into the instance:
 ssh -i /path/to/key.pem ubuntu@<EC2_PUBLIC_DNS_OR_IP>
 ```
 
+Run the GPU host setup helper from the repo root if this is a fresh DLAMI instance:
+
+```sh
+bash scripts/setup_ec2_gpu.sh
+source ~/.bashrc
+```
+
+The helper installs Miniconda into `~/miniconda3` when missing, runs `conda init bash`, verifies
+`nvidia-smi`, and checks Docker GPU access.
+
 Verify the GPU:
 
 ```sh
