@@ -61,7 +61,10 @@ This file is the minimal, user-facing feature map for the current product.
 - Dev relaunch starts the daemon; macOS install adds a user LaunchAgent with `RunAtLoad` and
   `KeepAlive`.
 - Installed macOS builds include a minimal menu-bar item showing live/offline state, the local base
-  URL, and actions to open the WebUI or restart the daemon.
+  URL with copy action, and actions to open the WebUI or restart the daemon. When the release
+  manifest reports a newer build, the menu also shows `Update Sankalp` and starts the same update
+  flow as the WebUI. The menu-bar app keeps a single-instance lock so opening Sankalp again does not
+  create a second icon.
 
 ## Skills and Capabilities
 

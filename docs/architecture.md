@@ -89,9 +89,12 @@ Obsidian onboarding/auto-detection.
 - The macOS installer adds a user LaunchAgent (`ai.yantrai.sankalp.daemon`) with `RunAtLoad` and
   `KeepAlive`; it starts after login and continues while the screen is locked.
 - `Sankalp.app` is a minimal menu-bar app (`LSUIElement`) when the native launcher builds
-  successfully. Its status menu checks `/api/health`, shows the local base URL, opens the WebUI, and
-  can restart the daemon.
-- Updates are manifest-driven (`update.json`) via `/api/app/update`; user confirms update/relaunch.
+  successfully. Its status menu checks `/api/health`, shows the local base URL with a copy action,
+  opens the WebUI, and can restart the daemon. A user-local lock file prevents duplicate menu-bar
+  icons when the app is launched again while the login item is already running.
+- Updates are manifest-driven (`update.json`) via `/api/app/update`; the WebUI shows update state and
+  the menu-bar app reveals an `Update Sankalp` action only when the backend reports an available
+  update. Both paths call the same backend update starter.
 
 ## Deployment Tooling
 

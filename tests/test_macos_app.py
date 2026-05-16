@@ -32,8 +32,15 @@ class MacOSAppTests(unittest.TestCase):
                 self.assertIn(str(repo), source)
                 self.assertIn("sankalp.daemon", source)
                 self.assertIn("NSStatusItem", source)
+                self.assertIn("sankalp_icon", source)
+                self.assertIn("Status: Live", source)
                 self.assertIn("Open WebUI", source)
                 self.assertIn("Base URL", source)
+                self.assertIn("Copy", source)
+                self.assertIn("/api/app/update", source)
+                self.assertIn("Update Sankalp", source)
+                self.assertIn("update_available", source)
+                self.assertIn("Sankalp.menu.lock", source)
 
 
 if __name__ == "__main__":

@@ -188,13 +188,18 @@ def _native_launcher_source(repo_root: Path) -> str:
     app_path_objc = _objc_string(str(APP_PATH))
     app_path_shell_objc = _objc_string(shlex.quote(str(APP_PATH)))
     return f'''#import <Cocoa/Cocoa.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 static NSString * const SankalpURL = @"http://{HOST}:{PORT}";
 static NSString * const SankalpRepo = @"{repo_objc}";
 static NSString * const SankalpBaseURL = @"localhost:{PORT}";
+static int SankalpLockFD = -1;
 
 static int run_quiet(NSString *cmd) {{
   int rc = system([cmd UTF8String]);
@@ -207,8 +212,71 @@ static BOOL sankalp_live(void) {{
   return run_quiet(@"/usr/bin/curl -fsS http://{HOST}:{PORT}/api/health >/dev/null 2>&1") == 0;
 }}
 
+static NSDictionary *sankalp_update_status(void) {{
+  NSURL *url = [NSURL URLWithString:[SankalpURL stringByAppendingString:@"/api/app/update"]];
+  NSData *data = [NSData dataWithContentsOfURL:url options:0 error:nil];
+  if (!data) return nil;
+  id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  if (![parsed isKindOfClass:[NSDictionary class]]) return nil;
+  id update = [(NSDictionary *)parsed objectForKey:@"update"];
+  if (![update isKindOfClass:[NSDictionary class]]) return nil;
+  return (NSDictionary *)update;
+}}
+
+static void start_update(void) {{
+  run_quiet(@"/usr/bin/curl -fsS -X POST -H 'Content-Type: application/json' -d '{{}}' http://{HOST}:{PORT}/api/app/update >/dev/null 2>&1 &");
+}}
+
 static void open_webui(void) {{
   [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:SankalpURL]];
+}}
+
+static NSImage *sankalp_icon(BOOL live) {{
+  NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(18, 18)];
+  [image lockFocus];
+  NSBezierPath *background = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(1, 1, 16, 16) xRadius:4 yRadius:4];
+  NSColor *fill = live
+    ? [NSColor colorWithCalibratedRed:0.18 green:0.47 blue:0.86 alpha:1.0]
+    : [NSColor colorWithCalibratedWhite:0.45 alpha:1.0];
+  [fill setFill];
+  [background fill];
+
+  [[NSColor whiteColor] setStroke];
+  NSBezierPath *mark = [NSBezierPath bezierPath];
+  mark.lineWidth = 2.0;
+  mark.lineCapStyle = NSLineCapStyleRound;
+  mark.lineJoinStyle = NSLineJoinStyleRound;
+  [mark moveToPoint:NSMakePoint(6, 12)];
+  [mark lineToPoint:NSMakePoint(11, 9)];
+  [mark lineToPoint:NSMakePoint(7, 5)];
+  [mark stroke];
+
+  [image unlockFocus];
+  image.template = NO;
+  return image;
+}}
+
+static BOOL login_launch(void) {{
+  const char *value = getenv("SANKALP_MENU_BAR_LOGIN");
+  return value && strcmp(value, "1") == 0;
+}}
+
+static BOOL acquire_single_instance_lock(void) {{
+  const char *home = getenv("HOME");
+  if (!home) home = "/tmp";
+  char state_dir[4096];
+  char lock_path[4096];
+  snprintf(state_dir, sizeof(state_dir), "%s/.sankalp", home);
+  mkdir(state_dir, 0700);
+  snprintf(lock_path, sizeof(lock_path), "%s/Sankalp.menu.lock", state_dir);
+  SankalpLockFD = open(lock_path, O_CREAT | O_RDWR, 0600);
+  if (SankalpLockFD < 0) return YES;
+  if (flock(SankalpLockFD, LOCK_EX | LOCK_NB) != 0) {{
+    close(SankalpLockFD);
+    SankalpLockFD = -1;
+    return NO;
+  }}
+  return YES;
 }}
 
 static void free_port(void) {{
@@ -233,7 +301,9 @@ static void start_daemon(void) {{
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenuItem *statusLine;
 @property(nonatomic, strong) NSMenuItem *baseURLLine;
+@property(nonatomic, strong) NSMenuItem *updateItem;
 @property(nonatomic, strong) NSTimer *timer;
+@property(nonatomic, strong) NSTimer *updateTimer;
 @end
 
 @implementation SankalpAppDelegate
@@ -241,44 +311,111 @@ static void start_daemon(void) {{
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {{
   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
   self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-  self.statusItem.button.title = @"S";
+  self.statusItem.button.title = @"";
+  self.statusItem.button.image = sankalp_icon(YES);
+  self.statusItem.button.imagePosition = NSImageOnly;
   self.statusItem.button.toolTip = @"Sankalp";
 
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Sankalp"];
   NSMenuItem *titleLine = [[NSMenuItem alloc] initWithTitle:@"Sankalp" action:nil keyEquivalent:@""];
   titleLine.enabled = NO;
   [menu addItem:titleLine];
-  self.statusLine = [[NSMenuItem alloc] initWithTitle:@"Sankalp: Checking..." action:nil keyEquivalent:@""];
+  self.statusLine = [[NSMenuItem alloc] initWithTitle:@"Status: Checking..." action:nil keyEquivalent:@""];
   self.statusLine.enabled = NO;
   [menu addItem:self.statusLine];
-  self.baseURLLine = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Base URL: %@", SankalpBaseURL] action:nil keyEquivalent:@""];
-  self.baseURLLine.enabled = NO;
-  [menu addItem:self.baseURLLine];
+  [menu addItem:[self baseURLMenuItem]];
   [menu addItem:[NSMenuItem separatorItem]];
+  self.updateItem = [[NSMenuItem alloc] initWithTitle:@"Update Sankalp" action:@selector(updateSankalp:) keyEquivalent:@"u"];
+  self.updateItem.hidden = YES;
+  [menu addItem:self.updateItem];
   [menu addItem:[[NSMenuItem alloc] initWithTitle:@"Open WebUI" action:@selector(openWebUI:) keyEquivalent:@"o"]];
   [menu addItem:[[NSMenuItem alloc] initWithTitle:@"Restart Daemon" action:@selector(restartDaemon:) keyEquivalent:@"r"]];
   self.statusItem.menu = menu;
 
   start_daemon();
   [self refreshStatus:nil];
+  [self refreshUpdateStatus:nil];
   self.timer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(refreshStatus:) userInfo:nil repeats:YES];
+  self.updateTimer = [NSTimer scheduledTimerWithTimeInterval:1800.0 target:self selector:@selector(refreshUpdateStatus:) userInfo:nil repeats:YES];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{{
+    [self refreshUpdateStatus:nil];
+  }});
 
-  const char *loginLaunch = getenv("SANKALP_MENU_BAR_LOGIN");
-  if (!(loginLaunch && strcmp(loginLaunch, "1") == 0)) {{
+  if (!login_launch()) {{
     open_webui();
   }}
 }}
 
 - (void)refreshStatus:(id)sender {{
   BOOL live = sankalp_live();
-  self.statusItem.button.title = live ? @"S" : @"S!";
-  self.statusLine.title = live ? @"Sankalp: Live" : @"Sankalp: Offline";
+  self.statusItem.button.title = @"";
+  self.statusItem.button.image = sankalp_icon(live);
+  self.statusLine.title = live ? @"Status: Live" : @"Status: Offline";
+}}
+
+- (void)refreshUpdateStatus:(id)sender {{
+  if (!sankalp_live()) {{
+    self.updateItem.hidden = YES;
+    return;
+  }}
+
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{{
+    NSDictionary *update = sankalp_update_status();
+    BOOL available = [[update objectForKey:@"update_available"] boolValue];
+    id latestValue = [update objectForKey:@"latest_version"];
+    NSString *latest = [latestValue isKindOfClass:[NSString class]] ? (NSString *)latestValue : @"";
+
+    dispatch_async(dispatch_get_main_queue(), ^{{
+      if (!available) {{
+        self.updateItem.hidden = YES;
+        return;
+      }}
+      self.updateItem.hidden = NO;
+      self.updateItem.enabled = YES;
+      self.updateItem.title = [latest length] > 0
+        ? [NSString stringWithFormat:@"Update Sankalp (%@)", latest]
+        : @"Update Sankalp";
+    }});
+  }});
+}}
+
+- (NSMenuItem *)baseURLMenuItem {{
+  NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+  NSView *view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 260, 28)];
+  NSTextField *label = [[NSTextField alloc] initWithFrame:NSMakeRect(14, 4, 168, 20)];
+  label.stringValue = [NSString stringWithFormat:@"Base URL: %@", SankalpBaseURL];
+  label.editable = NO;
+  label.bordered = NO;
+  label.drawsBackground = NO;
+  label.font = [NSFont systemFontOfSize:13];
+  label.textColor = [NSColor labelColor];
+  NSButton *copyButton = [NSButton buttonWithTitle:@"Copy" target:self action:@selector(copyBaseURL:)];
+  copyButton.frame = NSMakeRect(192, 2, 58, 24);
+  copyButton.bezelStyle = NSBezelStyleRounded;
+  [view addSubview:label];
+  [view addSubview:copyButton];
+  item.view = view;
+  return item;
+}}
+
+- (void)copyBaseURL:(id)sender {{
+  NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+  [pasteboard clearContents];
+  [pasteboard setString:SankalpURL forType:NSPasteboardTypeString];
+}}
+
+- (void)updateSankalp:(id)sender {{
+  self.updateItem.hidden = NO;
+  self.updateItem.enabled = NO;
+  self.updateItem.title = @"Update started...";
+  start_update();
 }}
 
 - (void)openWebUI:(id)sender {{
   start_daemon();
   open_webui();
   [self refreshStatus:nil];
+  [self refreshUpdateStatus:nil];
 }}
 
 - (void)restartDaemon:(id)sender {{
@@ -286,6 +423,7 @@ static void start_daemon(void) {{
   start_daemon();
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{{
     [self refreshStatus:nil];
+    [self refreshUpdateStatus:nil];
   }});
 }}
 
@@ -293,6 +431,10 @@ static void start_daemon(void) {{
 
 int main(int argc, const char * argv[]) {{
   @autoreleasepool {{
+    if (!acquire_single_instance_lock()) {{
+      if (!login_launch()) open_webui();
+      return 0;
+    }}
     NSApplication *app = [NSApplication sharedApplication];
     SankalpAppDelegate *delegate = [[SankalpAppDelegate alloc] init];
     app.delegate = delegate;
