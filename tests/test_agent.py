@@ -372,6 +372,45 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(result["tool_calls"], [])
             self.assertIn("latest=hello there", result["message"]["content"])
 
+    def test_natural_file_list_request_routes_without_llm(self):
+        class BrokenLLM:
+            def complete(self, *args, **kwargs):
+                raise RuntimeError("model should not be called")
+
+            def select_tool(self, *args, **kwargs):
+                raise RuntimeError("selector should not be called")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Projects").mkdir()
+            (root / "notes.md").write_text("hello", encoding="utf-8")
+            memory = ObsidianMemory(root / "vault")
+            tools = ToolRegistry(memory)
+            tools.roots = [root.resolve()]
+            agent = Agent(SessionStore(root / "sessions"), memory, tools, BrokenLLM())
+
+            result = agent.turn(None, "What folders do you see on my system?")
+
+            self.assertEqual(result["tool_calls"][0]["name"], "file_list")
+            self.assertIn("Projects", result["message"]["content"])
+            self.assertIn("Allowed roots", result["message"]["content"])
+
+    def test_ls_command_lists_requested_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            (workspace / "README.md").write_text("hello", encoding="utf-8")
+            memory = ObsidianMemory(root / "vault")
+            tools = ToolRegistry(memory)
+            tools.roots = [root.resolve()]
+            agent = Agent(SessionStore(root / "sessions"), memory, tools, FakeLLM())
+
+            result = agent.turn(None, f"/ls {workspace}")
+
+            self.assertEqual(result["tool_calls"][0]["name"], "file_list")
+            self.assertIn("README.md", result["message"]["content"])
+
     def test_turn_passes_attachments_and_options_to_llm(self):
         class CaptureLLM:
             def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):

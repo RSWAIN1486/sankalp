@@ -14,8 +14,11 @@ This file is the minimal, user-facing feature map for the current product.
 
 ## Composer and Inputs
 
-- Per-message provider/model/reasoning selection.
-- Provider-scoped model memory in WebUI (switching provider keeps its own model choice).
+- Default provider/model in `Settings -> Provider`, used by Telegram and when a new WebUI chat is
+  started.
+- Per-message provider/model/reasoning selection in the composer.
+- Provider-scoped model memory in WebUI (switching provider keeps its own model choice during a
+  chat, while new chats reset to the saved default).
 - Attach `.md`, `.txt`, `.pdf`, and images.
 - Enter to send, Shift+Enter for newline.
 - Slash-command picker when typing `/`, backed by the backend capabilities command catalog.
@@ -25,6 +28,7 @@ This file is the minimal, user-facing feature map for the current product.
 - Built-in providers: `local`, `local_openai`, `codex`, `gemini`, `openai`.
 - Provider settings are local-first and persisted in `~/.sankalp/settings.json`.
 - `/api/models?provider=...` model loading with runtime fallback behavior.
+- Settings and composer model pickers use provider model catalogs instead of free-text model fields.
 - `Test hello` connection check without creating a chat session.
 
 ## Memory
@@ -37,7 +41,10 @@ This file is the minimal, user-facing feature map for the current product.
 
 ## Tools and Research
 
-- Core tools include memory, web fetch/search, file read/append, and optional terminal.
+- Core tools include memory, web fetch/search, file list/read/append, and optional terminal.
+- `/ls [path]` lists visible files and folders under configured local roots; simple file/folder
+  questions route to this tool before calling a model. Ambiguous tool requests can also be routed by
+  the LLM tool selector using the advertised tool catalog.
 - Tool calls are logged in session activity for auditability.
 - `/research <query>` for web discovery + synthesis with source links.
 - `/fetch <url>` for readable-content extraction with provider-aware fallback.

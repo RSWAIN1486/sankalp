@@ -226,6 +226,13 @@ class Agent:
                 return f"Read `{result.output['path']}`.\n\n{result.output['text']}"
             return f"Read failed: {result.output}"
 
+        if lowered in {"/ls", "/files", "/folders"} or lowered.startswith(("/ls ", "/files ", "/folders ")):
+            path = content.split(maxsplit=1)[1].strip() if len(content.split(maxsplit=1)) > 1 else "."
+            return self._route_file_list(session, path)
+
+        if self._is_file_list_request(lowered):
+            return self._route_file_list(session, self._file_list_path_from_request(content))
+
         if lowered.startswith("/append "):
             body = content[len("/append "):]
             if "::" not in body:
@@ -681,6 +688,9 @@ class Agent:
             if result.status == "ok":
                 return f"Read `{result.output['path']}`.\n\n{result.output['text']}"
             return f"Read failed: {result.output}"
+        if tool == "file_list":
+            path = str(arguments.get("path") or ".").strip() or "."
+            return self._route_file_list(session, path)
         if tool == "computer_status":
             result = self.tools.call("computer_status")
             session.tool_calls.append(asdict(result))
@@ -723,6 +733,11 @@ class Agent:
                 "arguments": {"path": "path inside an allowed root"},
             },
             {
+                "name": "file_list",
+                "description": "List files and folders in a local directory inside an allowed root.",
+                "arguments": {"path": "directory path inside an allowed root, or . for the default root"},
+            },
+            {
                 "name": "computer_status",
                 "description": "Check whether experimental macOS Computer Use is available and what permissions it needs.",
                 "arguments": {},
@@ -745,6 +760,46 @@ class Agent:
             if query:
                 return query
         return content
+
+    def _route_file_list(self, session: Session, path: str = ".") -> str:
+        result = self.tools.call("file_list", path=path or ".", limit=80)
+        session.tool_calls.append(asdict(result))
+        if result.status != "ok":
+            return f"List failed: {result.output}"
+        return self._format_file_list(result.output)
+
+    def _format_file_list(self, output: dict[str, Any]) -> str:
+        entries = output.get("entries") or []
+        lines = [f"I can see this directory: `{output.get('path', '.')}`"]
+        if not entries:
+            lines.append("\nNo visible files or folders found there.")
+        else:
+            lines.append("")
+            for item in entries:
+                icon = "dir" if item.get("type") == "directory" else "file"
+                lines.append(f"- `{item.get('name')}` ({icon})")
+        roots = output.get("allowed_roots") or []
+        if roots:
+            lines.extend(["", "Allowed roots:"])
+            lines.extend(f"- `{root}`" for root in roots)
+        if output.get("truncated"):
+            lines.append("\nOutput was truncated. Use `/ls <path>` for a narrower directory.")
+        return "\n".join(lines)
+
+    def _is_file_list_request(self, lowered: str) -> bool:
+        action = r"\b(list|show|see|view|display)\b"
+        target = r"\b(files?|folders?|directories)\b"
+        return bool(
+            re.search(fr"{action}.*{target}", lowered)
+            or re.search(fr"{target}.*\b(visible|available|present|there|see)\b", lowered)
+        )
+
+    def _file_list_path_from_request(self, content: str) -> str:
+        match = re.search(r"\b(?:in|under|inside)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|/[^\n?]+|~[^\n?]+)", content, flags=re.I)
+        if not match:
+            return "."
+        path = match.group(1).strip().strip("`\"'")
+        return path.strip() or "."
 
     def _format_browser_search(self, query: str, output: dict[str, Any]) -> str:
         results = output.get("results") or []

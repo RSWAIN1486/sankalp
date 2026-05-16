@@ -60,7 +60,9 @@ scroll regions while the header, settings entry point, and composer stay fixed i
 ## Runtime Flows
 
 - Chat flow: WebUI -> `/api/chat/stream` -> agent/tool/provider pipeline -> SSE events (`status`,
-  `reasoning`, `delta`, `session`, `done`) -> session + tool log persistence.
+  `reasoning`, `delta`, `session`, `done`) -> session + tool log persistence. `Settings -> Provider`
+  stores the default provider/model used by Telegram and newly created WebUI chats; the composer can
+  override provider/model per message during an active chat.
 - OpenAI-compatible streaming forwards chat-completion content deltas when available and falls back
 to a non-streaming completion if the upstream stream closes without visible text, preventing blank
 assistant turns from providers with unusual streaming/reasoning output.
@@ -71,7 +73,10 @@ accessibility-tree inspection, and explicit click/type/key actions. `/computer t
 bounded experimental loop that observes, asks the selected model for one structured action, checks
 policy, executes through the tool registry, and repeats until done/blocked/confirmed.
 - Memory flow: `/remember` and natural save intents write to Obsidian with routing/fallback logic;
-explicit memory-find intents route through `memory_search` first.
+  explicit memory-find intents route through `memory_search` first.
+- File flow: `/ls [path]` and natural file/folder listing requests call `file_list` before model
+  routing; ambiguous requests can still be selected through the LLM tool router. File tools remain
+  limited to configured allowed roots.
 - Telegram gateway flow: Telegram long polling -> allowlist check -> per-chat session lookup under
   `~/.sankalp/gateway/telegram.json` -> `Agent.turn` -> chunked Telegram replies.
 - Title flow: immediate fallback title, then async global smallest-model title generation

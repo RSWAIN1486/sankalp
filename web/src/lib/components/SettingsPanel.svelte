@@ -2,8 +2,8 @@
   import { onMount } from "svelte";
   import { Download, Folder, KeyRound, MessageCircle, RotateCw, Search, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
   import { api } from "$lib/services/api";
-  import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, setStreamDiagnosticsEnabled, startAppUpdate } from "$lib/stores/chat";
-  import type { Capabilities, Settings } from "$lib/types";
+  import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, providerOptions, refreshSettings, setSettingsTab, setStreamDiagnosticsEnabled, startAppUpdate } from "$lib/stores/chat";
+  import type { Capabilities, ModelOption, Settings } from "$lib/types";
 
   type Tab = "provider" | "research" | "gateway" | "memory" | "profile" | "app" | "capabilities";
   type Trait = { id: string; title: string; confidence: string; text: string; evidence?: string };
@@ -50,6 +50,10 @@
   ];
 
   $: provider = settings.provider || "local";
+  $: defaultModelOptions = modelOptionsFor(provider);
+  $: defaultModelCatalog = $chatState.modelCatalog[provider];
+  $: modelStatusText = modelLoadStatus();
+  $: if (settings.provider) void ensureProviderModels(settings.provider);
   $: diagnostics = $chatState.streamDiagnostics;
   $: streamDurationMs = diagnostics.started_at && diagnostics.last_event_at ? diagnostics.last_event_at - diagnostics.started_at : 0;
 
@@ -117,6 +121,32 @@
     });
     const model = data.test?.model ? ` (${data.test.model})` : "";
     providerTest = data.test?.ok ? `Working${model}: ${data.test.text || "response received"}` : data.test?.error || "Provider test failed.";
+  }
+
+  function modelOptionsFor(target: string): ModelOption[] {
+    if (target === "local") return [{ id: "", label: "No model" }];
+    const configured = modelForProvider(target);
+    const options = [...($chatState.modelCatalog[target]?.models || [])];
+    if (configured && !options.some((model) => model.id === configured)) {
+      options.unshift({ id: configured, label: configured });
+    }
+    return options;
+  }
+
+  function modelForProvider(target: string): string {
+    if (target === "local_openai") return settings.local_openai_model || "";
+    if (target === "codex") return settings.codex_model || "";
+    if (target === "gemini") return settings.gemini_model || "";
+    if (target === "openai") return settings.openai_model || "";
+    return "";
+  }
+
+  function modelLoadStatus(): string {
+    if (provider === "local") return "";
+    if (defaultModelCatalog?.loading) return "Loading models...";
+    if (defaultModelCatalog?.error) return `Model list fallback: ${defaultModelCatalog.error}`;
+    if (defaultModelCatalog?.source) return `Model list: ${defaultModelCatalog.source}`;
+    return "";
   }
 
   async function startCodexLogin() {
@@ -318,40 +348,68 @@
 
   {#if $chatState.settingsTab === "provider"}
     <section class="settings-section">
-      <h2><KeyRound size={16} /> Provider</h2>
-      <label>Provider
+      <h2><KeyRound size={16} /> Default Provider</h2>
+      <label>Default provider
         <select bind:value={settings.provider}>
-          <option value="local">Local fallback</option>
-          <option value="local_openai">OpenAI-compatible endpoint</option>
-          <option value="codex">Codex CLI</option>
-          <option value="gemini">Gemini API</option>
-          <option value="openai">OpenAI API</option>
+          {#each providerOptions as option}
+            <option value={option.id}>{option.label}</option>
+          {/each}
         </select>
       </label>
 
       {#if provider === "local_openai"}
         <label>Base URL <input bind:value={settings.local_openai_base_url} placeholder="http://localhost:2276/v1" /></label>
-        <label>Model <input bind:value={settings.local_openai_model} placeholder="model name" /></label>
+        <label>Default model
+          <select bind:value={settings.local_openai_model} disabled={defaultModelOptions.length === 0}>
+            <option value="">Select a model</option>
+            {#each defaultModelOptions as model}
+              <option value={model.id}>{model.label || model.id}</option>
+            {/each}
+          </select>
+        </label>
         <label>API key <input bind:value={localOpenAIKey} placeholder={settings.has_local_openai_api_key ? "Local key saved" : "Optional"} type="password" /></label>
       {:else if provider === "codex"}
-        <label>Codex model <input bind:value={settings.codex_model} placeholder="gpt-5.5" /></label>
+        <label>Default model
+          <select bind:value={settings.codex_model} disabled={defaultModelOptions.length === 0}>
+            <option value="">Codex default</option>
+            {#each defaultModelOptions as model}
+              <option value={model.id}>{model.label || model.id}</option>
+            {/each}
+          </select>
+        </label>
         <div class="settings-inline">
           <button type="button" on:click={startCodexLogin}>Login</button>
           <span>{codexStatus}</span>
         </div>
       {:else if provider === "gemini"}
-        <label>Gemini model <input bind:value={settings.gemini_model} placeholder="gemini-3-flash-preview" /></label>
+        <label>Default model
+          <select bind:value={settings.gemini_model} disabled={defaultModelOptions.length === 0}>
+            <option value="">Select a model</option>
+            {#each defaultModelOptions as model}
+              <option value={model.id}>{model.label || model.id}</option>
+            {/each}
+          </select>
+        </label>
         <label>Gemini API key <input bind:value={geminiKey} placeholder={settings.has_gemini_api_key ? "Gemini key saved" : "Leave blank to keep existing key"} type="password" /></label>
       {:else if provider === "openai"}
-        <label>OpenAI model <input bind:value={settings.openai_model} placeholder="gpt-5.5" /></label>
+        <label>Default model
+          <select bind:value={settings.openai_model} disabled={defaultModelOptions.length === 0}>
+            <option value="">Select a model</option>
+            {#each defaultModelOptions as model}
+              <option value={model.id}>{model.label || model.id}</option>
+            {/each}
+          </select>
+        </label>
         <label>OpenAI API key <input bind:value={openaiKey} placeholder={settings.has_openai_api_key ? "OpenAI key saved" : "Leave blank to keep existing key"} type="password" /></label>
       {:else}
         <p>Local fallback does not call an external model.</p>
       {/if}
+      {#if modelStatusText}<p>{modelStatusText}</p>{/if}
 
       <div class="settings-actions">
         <button type="button" on:click={saveProvider}>Save</button>
         <button type="button" on:click={testProvider}>Test hello</button>
+        {#if provider !== "local"}<button type="button" on:click={() => ensureProviderModels(provider, true)}>Refresh models</button>{/if}
       </div>
       {#if providerTest}<p>{providerTest}</p>{/if}
 

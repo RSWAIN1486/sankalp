@@ -32,6 +32,8 @@ class ToolRegistry:
             return self.browser_search(**kwargs)
         if name == "file_read":
             return self.file_read(**kwargs)
+        if name == "file_list":
+            return self.file_list(**kwargs)
         if name == "file_append":
             return self.file_append(**kwargs)
         if name == "terminal":
@@ -126,6 +128,42 @@ class ToolRegistry:
             return ToolResult.run("file_read", {"path": path}, {"path": str(resolved), "text": text[:20000]}, started_at=started)
         except Exception as exc:
             return ToolResult.run("file_read", {"path": path}, {"error": str(exc)}, "error", started)
+
+    def file_list(self, path: str = ".", limit: int = 100, include_hidden: bool = False) -> ToolResult:
+        started = time.time()
+        resolved = self._resolve_allowed(path or ".")
+        if resolved is None:
+            return ToolResult.run("file_list", {"path": path}, {"error": "path is outside allowed roots"}, "blocked", started)
+        if not resolved.exists():
+            return ToolResult.run("file_list", {"path": path}, {"error": "path does not exist", "resolved": str(resolved)}, "error", started)
+        if not resolved.is_dir():
+            return ToolResult.run("file_list", {"path": path}, {"error": "path is not a directory", "resolved": str(resolved)}, "error", started)
+        try:
+            limit = max(1, min(int(limit or 100), 300))
+            entries = []
+            for item in sorted(resolved.iterdir(), key=lambda entry: (not entry.is_dir(), entry.name.lower())):
+                if not include_hidden and item.name.startswith("."):
+                    continue
+                entries.append({
+                    "name": item.name,
+                    "path": str(item),
+                    "type": "directory" if item.is_dir() else "file",
+                })
+                if len(entries) >= limit:
+                    break
+            return ToolResult.run(
+                "file_list",
+                {"path": path, "limit": limit, "include_hidden": include_hidden},
+                {
+                    "path": str(resolved),
+                    "entries": entries,
+                    "truncated": len(entries) >= limit,
+                    "allowed_roots": [str(root) for root in self.roots],
+                },
+                started_at=started,
+            )
+        except Exception as exc:
+            return ToolResult.run("file_list", {"path": path}, {"error": str(exc), "resolved": str(resolved)}, "error", started)
 
     def file_append(self, path: str, text: str) -> ToolResult:
         started = time.time()

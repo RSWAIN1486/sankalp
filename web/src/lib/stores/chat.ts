@@ -30,7 +30,7 @@ type ChatState = {
   streamDiagnostics: StreamDiagnostics;
 };
 
-const providerOptions: Array<{ id: string; label: string }> = [
+export const providerOptions: Array<{ id: string; label: string }> = [
   { id: "local", label: "Local fallback" },
   { id: "local_openai", label: "OpenAI-compatible" },
   { id: "codex", label: "Codex CLI" },
@@ -102,10 +102,10 @@ export async function initializeChat(): Promise<void> {
     loadStreamDiagnosticsEnabled()
   ]);
   const settings = settingsData.settings || {};
-  const provider = preference.provider || settings.provider || "local";
+  const provider = settings.provider || preference.provider || "local";
   const modelsByProvider = {
-    ...defaultModelsByProvider(settings),
-    ...(preference.models_by_provider || {})
+    ...(preference.models_by_provider || {}),
+    ...defaultModelsByProvider(settings)
   };
   const composer = {
     ...defaultComposer,
@@ -136,13 +136,24 @@ export async function createSession(): Promise<void> {
     method: "POST",
     body: "{}"
   });
+  const snapshot = get(chatState);
+  const modelsByProvider = { ...snapshot.composerModelsByProvider, ...defaultModelsByProvider(snapshot.settings) };
+  const provider = snapshot.settings.provider || "local";
+  const composer = {
+    ...snapshot.composer,
+    provider,
+    model: selectedModelForProvider(provider, snapshot.settings, modelsByProvider, snapshot.modelCatalog)
+  };
   chatState.update((state) => ({
     ...state,
     currentSessionId: data.session.session_id,
     messages: data.messages || [],
     toolCalls: data.tool_calls || [],
-    status: "Ready"
+    status: "Ready",
+    composer,
+    composerModelsByProvider: modelsByProvider
   }));
+  await saveComposerPreference({ ...composer, models_by_provider: modelsByProvider });
   await loadSessions();
 }
 
@@ -420,9 +431,9 @@ function delay(ms: number): Promise<void> {
 export function refreshSettings(settings: Settings): void {
   chatState.update((state) => {
     const defaults = defaultModelsByProvider(settings);
-    const modelsByProvider = { ...defaults, ...state.composerModelsByProvider };
-    const provider = state.composer.provider || settings.provider || "local";
-    const model = state.composer.model || selectedModelForProvider(provider, settings, modelsByProvider, state.modelCatalog);
+    const modelsByProvider = { ...state.composerModelsByProvider, ...defaults };
+    const provider = settings.provider || state.composer.provider || "local";
+    const model = selectedModelForProvider(provider, settings, modelsByProvider, state.modelCatalog);
     return {
       ...state,
       settings,
