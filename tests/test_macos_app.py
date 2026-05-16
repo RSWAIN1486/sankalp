@@ -21,10 +21,14 @@ class MacOSAppTests(unittest.TestCase):
             executable = app_path / "Contents" / "MacOS" / "Sankalp"
             self.assertTrue(executable.exists())
             if result["launcher_type"] == "shell":
-                self.assertIn(str(repo), executable.read_text(encoding="utf-8"))
+                launcher = executable.read_text(encoding="utf-8")
+                self.assertIn(str(repo), launcher)
+                self.assertIn("-m sankalp.daemon", launcher)
             else:
                 launcher_source = app_path / "Contents" / "Resources" / "launcher.c"
-                self.assertIn(str(repo), launcher_source.read_text(encoding="utf-8"))
+                source = launcher_source.read_text(encoding="utf-8")
+                self.assertIn(str(repo), source)
+                self.assertIn("sankalp.daemon", source)
 
 
 if __name__ == "__main__":

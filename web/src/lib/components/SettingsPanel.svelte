@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Download, Folder, KeyRound, RotateCw, Search, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
+  import { Download, Folder, KeyRound, MessageCircle, RotateCw, Search, ShieldCheck, Sparkles, User, Wrench, X } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import { chatState, checkAppUpdate, closeSettings, ensureProviderModels, refreshSettings, setSettingsTab, setStreamDiagnosticsEnabled, startAppUpdate } from "$lib/stores/chat";
   import type { Capabilities, Settings } from "$lib/types";
 
-  type Tab = "provider" | "research" | "memory" | "profile" | "app" | "capabilities";
+  type Tab = "provider" | "research" | "gateway" | "memory" | "profile" | "app" | "capabilities";
   type Trait = { id: string; title: string; confidence: string; text: string; evidence?: string };
   type Profile = { self_profile?: string; traits?: Trait[] };
   type FolderOption = { path: string };
@@ -35,12 +35,14 @@
   let geminiKey = "";
   let openaiKey = "";
   let firecrawlKey = "";
+  let telegramBotToken = "";
   let capabilities: Capabilities = { skills: [], tools: [], commands: [] };
   $: needsVaultAccess = macosAvailable && !memoryStatus.accessible;
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "provider", label: "Provider" },
     { id: "research", label: "Research" },
+    { id: "gateway", label: "Gateway" },
     { id: "memory", label: "Memory" },
     { id: "profile", label: "Profile" },
     { id: "capabilities", label: "Capabilities" },
@@ -141,6 +143,35 @@
     memoryStatus = foldersData.status || memoryStatus;
     await loadFolderChildren(settings.obsidian_workspace_path || "");
     status = "Synced";
+  }
+
+  async function saveGateway() {
+    status = "Saving gateway...";
+    const data = await api<{ settings: Settings }>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        telegram_gateway_enabled: Boolean(settings.telegram_gateway_enabled),
+        telegram_bot_token: telegramBotToken,
+        telegram_allowed_users: settings.telegram_allowed_users || "",
+        telegram_allow_all: Boolean(settings.telegram_allow_all)
+      })
+    });
+    settings = data.settings || {};
+    telegramBotToken = "";
+    refreshSettings(settings);
+    status = "Saved. Restart Sankalp for daemon changes to take effect.";
+  }
+
+  async function clearTelegramToken() {
+    status = "Clearing Telegram token...";
+    const data = await api<{ settings: Settings }>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({ clear_telegram_bot_token: true, telegram_gateway_enabled: false })
+    });
+    settings = data.settings || {};
+    telegramBotToken = "";
+    refreshSettings(settings);
+    status = "Telegram gateway disabled";
   }
 
   async function loadFolderChildren(folder: string) {
@@ -347,6 +378,38 @@
         <button type="button" on:click={saveProvider}>Save research</button>
       </div>
       <p>Provider order: Firecrawl URL, Firecrawl cloud key, SearXNG, DuckDuckGo fallback.</p>
+    </section>
+  {:else if $chatState.settingsTab === "gateway"}
+    <section class="settings-section">
+      <h2><MessageCircle size={16} /> Gateway</h2>
+      <div class="settings-inline">
+        <label>
+          <input type="checkbox" bind:checked={settings.telegram_gateway_enabled} />
+          Enable Telegram gateway
+        </label>
+      </div>
+      <label>Telegram bot token
+        <input
+          bind:value={telegramBotToken}
+          placeholder={settings.has_telegram_bot_token ? "Telegram token saved" : "BotFather token"}
+          type="password"
+        />
+      </label>
+      <label>Allowed Telegram user IDs
+        <input bind:value={settings.telegram_allowed_users} placeholder="123456789,987654321" />
+      </label>
+      <div class="settings-inline">
+        <label>
+          <input type="checkbox" bind:checked={settings.telegram_allow_all} />
+          Allow all Telegram users
+        </label>
+      </div>
+      <div class="settings-actions">
+        <button type="button" on:click={saveGateway}>Save gateway</button>
+        {#if settings.has_telegram_bot_token}<button type="button" on:click={clearTelegramToken}>Clear token</button>{/if}
+      </div>
+      <p>Run `/whoami` in Telegram after messaging the bot to see the user ID to allow.</p>
+      <p>Daemon changes apply after restart, dev relaunch, or the next macOS login daemon restart.</p>
     </section>
   {:else if $chatState.settingsTab === "memory"}
     <section class="settings-section">

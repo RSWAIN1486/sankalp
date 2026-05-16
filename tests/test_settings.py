@@ -15,6 +15,7 @@ class SettingsTests(unittest.TestCase):
                 "SESSION_DIR": config_module.SESSION_DIR,
                 "SKILLS_DIR": config_module.SKILLS_DIR,
                 "HOOKS_DIR": config_module.HOOKS_DIR,
+                "GATEWAY_DIR": config_module.GATEWAY_DIR,
                 "LOGS_DIR": config_module.LOGS_DIR,
                 "CACHE_DIR": config_module.CACHE_DIR,
                 "SANDBOXES_DIR": config_module.SANDBOXES_DIR,
@@ -30,6 +31,7 @@ class SettingsTests(unittest.TestCase):
                 config_module.SESSION_DIR = root / "sessions"
                 config_module.SKILLS_DIR = root / "skills"
                 config_module.HOOKS_DIR = root / "hooks"
+                config_module.GATEWAY_DIR = root / "gateway"
                 config_module.LOGS_DIR = root / "logs"
                 config_module.CACHE_DIR = root / "cache"
                 config_module.SANDBOXES_DIR = root / "sandboxes"
@@ -44,7 +46,7 @@ class SettingsTests(unittest.TestCase):
                 for key, value in old_values.items():
                     setattr(config_module, key, value)
 
-            for name in ["sessions", "skills", "hooks", "logs", "cache", "sandboxes", "memories", "webui", "tools", "obsidian-vault"]:
+            for name in ["sessions", "skills", "hooks", "gateway", "logs", "cache", "sandboxes", "memories", "webui", "tools", "obsidian-vault"]:
                 self.assertTrue((root / name).is_dir(), name)
             self.assertTrue((root / "SOUL.md").is_file())
 
@@ -89,6 +91,28 @@ class SettingsTests(unittest.TestCase):
             self.assertTrue(public["has_firecrawl_api_key"])
             self.assertNotIn("firecrawl_api_key", public)
             self.assertEqual(private["firecrawl_api_key"], "fc-secret")
+
+    def test_saves_telegram_gateway_settings_and_masks_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_path = settings_module.SETTINGS_PATH
+            settings_module.SETTINGS_PATH = Path(tmp) / "settings.json"
+            try:
+                save_settings({
+                    "telegram_gateway_enabled": True,
+                    "telegram_bot_token": "telegram-secret",
+                    "telegram_allowed_users": "123,456",
+                    "telegram_allow_all": False,
+                })
+                public = load_settings()
+                private = load_settings(include_secrets=True)
+            finally:
+                settings_module.SETTINGS_PATH = old_path
+
+            self.assertTrue(public["telegram_gateway_enabled"])
+            self.assertTrue(public["has_telegram_bot_token"])
+            self.assertNotIn("telegram_bot_token", public)
+            self.assertEqual(public["telegram_allowed_users"], "123,456")
+            self.assertEqual(private["telegram_bot_token"], "telegram-secret")
 
 
 if __name__ == "__main__":

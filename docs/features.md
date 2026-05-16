@@ -9,7 +9,7 @@ This file is the minimal, user-facing feature map for the current product.
 - Edit-and-resend branching for earlier user turns.
 - Rename, export, and delete conversations from the sidebar.
 - Fixed app chrome: sidebar, settings controls, and composer stay in place while message history
-scrolls independently.
+  scrolls independently.
 - Async auto-title generation with global smallest-model routing; manual titles are preserved.
 
 ## Composer and Inputs
@@ -42,14 +42,24 @@ scrolls independently.
 - `/research <query>` for web discovery + synthesis with source links.
 - `/fetch <url>` for readable-content extraction with provider-aware fallback.
 - Experimental macOS Computer Use via `/computer ...`: list visible apps, inspect accessibility
-trees, capture screenshots, open apps, click/type/key/scroll explicit targets, and run a bounded
-low-risk `/computer task <instruction>` loop. Implementation details live in `docs/computer-use.md`.
+  trees, capture screenshots, open apps, click/type/key/scroll explicit targets, and run a bounded
+  low-risk `/computer task <instruction>` loop. Implementation details live in `docs/computer-use.md`.
 - `/computer permissions [accessibility|screen]` opens the macOS Privacy panes needed by the
-experimental harness.
+  experimental harness.
 - In dev mode, macOS permissions are granted to the launching app such as Terminal, iTerm, or
-Antigravity; `Sankalp.app` appears only when running the installed app bundle.
+  Antigravity; `Sankalp.app` appears only when running the installed app bundle.
 - Computer Use pauses before high-impact actions such as sending, deleting, purchasing, changing
-settings, or handling passwords, OTPs, API keys, and other sensitive data.
+  settings, or handling passwords, OTPs, API keys, and other sensitive data.
+
+## Daemon and Messaging Gateway
+
+- Foreground daemon entry point with `python3 -m sankalp.daemon`.
+- Optional Telegram gateway configured in `Settings -> Gateway`.
+- Telegram access is allowlisted by default through saved allowed user IDs.
+- Per-chat Telegram sessions persist under `~/.sankalp/gateway/telegram.json`.
+- Gateway commands include `/start`, `/help`, `/whoami`, `/status`, and `/new`.
+- Dev relaunch starts the daemon; macOS install adds a user LaunchAgent with `RunAtLoad` and
+  `KeepAlive`.
 
 ## Skills and Capabilities
 
@@ -75,4 +85,6 @@ flowchart LR
   AGENT --> SESS[Session Store]
   AGENT --> TOOLS[Tools/Research]
   UI --> PREFS[Dexie UI State]
+  TG[Telegram] --> GATEWAY[Telegram Gateway]
+  GATEWAY --> AGENT
 ```

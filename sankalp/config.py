@@ -14,6 +14,7 @@ FRONTEND_DIR = APP_DIR / "web"
 SESSION_DIR = STATE_DIR / "sessions"
 SKILLS_DIR = STATE_DIR / "skills"
 HOOKS_DIR = STATE_DIR / "hooks"
+GATEWAY_DIR = STATE_DIR / "gateway"
 LOGS_DIR = STATE_DIR / "logs"
 CACHE_DIR = STATE_DIR / "cache"
 SANDBOXES_DIR = STATE_DIR / "sandboxes"
@@ -52,6 +53,7 @@ def ensure_dirs() -> None:
         SESSION_DIR,
         SKILLS_DIR,
         HOOKS_DIR,
+        GATEWAY_DIR,
         LOGS_DIR,
         CACHE_DIR,
         SANDBOXES_DIR,

@@ -35,6 +35,11 @@ export type Settings = {
   firecrawl_api_key?: string;
   has_firecrawl_api_key?: boolean;
   searxng_base_url?: string;
+  telegram_gateway_enabled?: boolean;
+  telegram_bot_token?: string;
+  has_telegram_bot_token?: boolean;
+  telegram_allowed_users?: string;
+  telegram_allow_all?: boolean;
   gemini_model?: string;
   gemini_api_key?: string;
   has_gemini_api_key?: boolean;

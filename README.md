@@ -14,6 +14,7 @@ Sankalp is a local-first AI assistant with a minimalist WebUI, auditable tool ac
 - Obsidian-compatible memory with `/remember` and memory search.
 - Tooling for web fetch/search and safe local file actions.
 - Slash commands and capability discovery in `Settings -> Capabilities`.
+- Daemon mode with an optional Telegram messaging gateway configured from Settings.
 - Experimental macOS Computer Use via `/computer ...` (app listing, accessibility tree/screenshot
   inspection, explicit click/type/key/scroll actions, and bounded `/computer task ...` loop).
 - Local installed app flow with in-app update checks.
@@ -56,6 +57,11 @@ npm run dev
 - Installed app mode: `http://127.0.0.1:8765`
 - WebUI dev mode: `http://127.0.0.1:5173`
 
+## Telegram Gateway
+
+Open `Settings -> Gateway`, add your Telegram bot token and allowed Telegram user IDs, then restart
+Sankalp or run `scripts/relaunch_dev.sh`.
+
 ## First-Time Setup
 
 Open `Settings` in the app and configure:
@@ -94,4 +100,6 @@ For now:
 
 - [Architecture](docs/architecture.md)
 - [Features](docs/features.md)
+- [Messaging Gateway](docs/messaging-gateway.md)
+- [Roadmap](docs/roadmap.md)
 - [MVP Spec](docs/MVP_SPEC.md)

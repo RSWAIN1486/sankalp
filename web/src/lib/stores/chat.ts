@@ -23,7 +23,7 @@ type ChatState = {
   modelCatalog: Record<string, ModelCatalogEntry>;
   capabilities: Capabilities;
   settingsOpen: boolean;
-  settingsTab: "provider" | "research" | "memory" | "profile" | "app" | "capabilities";
+  settingsTab: "provider" | "research" | "gateway" | "memory" | "profile" | "app" | "capabilities";
   sidebarCollapsed: boolean;
   appUpdate: AppUpdateStatus | null;
   updateBannerDismissed: boolean;
@@ -312,11 +312,11 @@ export function toggleSettings(): void {
   chatState.update((state) => ({ ...state, settingsOpen: !state.settingsOpen }));
 }
 
-export function openSettings(tab: "provider" | "research" | "memory" | "profile" | "app" | "capabilities" = "provider"): void {
+export function openSettings(tab: ChatState["settingsTab"] = "provider"): void {
   chatState.update((state) => ({ ...state, settingsOpen: true, settingsTab: tab }));
 }
 
-export function setSettingsTab(tab: "provider" | "research" | "memory" | "profile" | "app" | "capabilities"): void {
+export function setSettingsTab(tab: ChatState["settingsTab"]): void {
   chatState.update((state) => ({ ...state, settingsTab: tab }));
 }
 

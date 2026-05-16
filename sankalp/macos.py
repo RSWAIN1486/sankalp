@@ -251,7 +251,7 @@ int main(void) {{
   setenv("SANKALP_REPO_DIR", repo, 1);
 
   pid_t server_pid;
-  char *argv[] = {{"/usr/bin/python3", "server.py", NULL}};
+  char *argv[] = {{"/usr/bin/python3", "-m", "sankalp.daemon", NULL}};
   int spawn_rc = posix_spawn(&server_pid, "/usr/bin/python3", &actions, &attrs, argv, environ);
   posix_spawn_file_actions_destroy(&actions);
   posix_spawnattr_destroy(&attrs);
@@ -307,7 +307,7 @@ free_port() {{
 free_port
 
 cd "$SANKALP_REPO_DIR" || exit 1
-nohup /usr/bin/python3 server.py >>"$LOG_FILE" 2>&1 </dev/null &
+nohup /usr/bin/python3 -m sankalp.daemon >>"$LOG_FILE" 2>&1 </dev/null &
 SERVER_PID=$!
 
 for _ in {{1..60}}; do

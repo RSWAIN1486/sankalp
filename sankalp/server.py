@@ -355,14 +355,22 @@ class Handler(BaseHTTPRequestHandler):
             send("error", {"error": str(exc)})
             self.close_connection = True
 
-def main() -> None:
+def start_http_server(block: bool = True) -> ThreadingHTTPServer:
     global HTTPD
     ensure_dirs()
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     HTTPD = httpd
     print(f"Sankalp listening on http://{HOST}:{PORT}", flush=True)
     print(f"Obsidian memory vault: {VAULT_DIR}", flush=True)
-    httpd.serve_forever()
+    if block:
+        httpd.serve_forever()
+    else:
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
+
+
+def main() -> None:
+    start_http_server(block=True)
 
 
 def _schedule_shutdown() -> None:

@@ -8,9 +8,11 @@ reinstalls/updates.
 
 - Frontend (`web/`): routes, components, stores, services, and Dexie browser cache.
 - Backend (`sankalp/`): HTTP server, typed JSON/SSE APIs, agent orchestration, providers, tools.
+- Daemon/gateway (`sankalp/daemon.py`, `sankalp/gateway/`): long-running local process for
+  non-WebUI entry points such as Telegram.
 - User memory: Obsidian-compatible Markdown vault for human-readable long-term notes.
 - Operational state: JSON sessions today (`~/.sankalp/sessions`), with SQLite (`state.db`) as
-durable backend-state direction.
+  durable backend-state direction.
 
 ## Core Modules
 
@@ -24,8 +26,13 @@ vLLM endpoint through an SSH tunnel or a restricted security-group rule.
 - `sankalp/sessions/store.py`: JSON session persistence.
 - `sankalp/memory/obsidian.py`: vault reads/writes, memory search helpers, open-note helpers.
 - `sankalp/tools/registry.py`: explicit tool catalog and auditable tool-call logging.
+- `sankalp/daemon.py`: foreground daemon entry point that can run the loopback API plus enabled
+  messaging gateways.
+- `sankalp/gateway/telegram.py`: Telegram Bot API long-polling gateway, allowlisted users, per-chat
+  session mapping, and outbound response chunking.
+- `scripts/install_macos.sh`: installs a user LaunchAgent that keeps the daemon running after login.
 - `sankalp/computer/*`: experimental macOS Computer Use harness, action safety policy, and
-model-guided task loop. See `docs/computer-use.md` for implementation details.
+  model-guided task loop. See `docs/computer-use.md` for implementation details.
 - `sankalp/skills/registry.py`: folder-backed skill discovery under `~/.sankalp/skills`.
 - `sankalp/updater.py`: release-manifest update checks and confirmed installer launch.
 
@@ -46,26 +53,29 @@ scroll regions while the header, settings entry point, and composer stay fixed i
 - `~/.sankalp/app`: managed application checkout (resettable by installer/update flow).
 - `~/.sankalp/settings.json`: local config and provider/research settings (keys masked in API reads).
 - `~/.sankalp/sessions/`: operational session JSON.
+- `~/.sankalp/gateway/telegram.json`: Telegram update offset and chat/thread-to-session mapping.
 - Obsidian vault: durable user memory (`People/`, `Projects/`, `Inbox/`, `Decisions/`, `Sessions/`).
 - `SOUL.md`: user-owned persona text loaded into prompts.
 
 ## Runtime Flows
 
 - Chat flow: WebUI -> `/api/chat/stream` -> agent/tool/provider pipeline -> SSE events (`status`,
-`reasoning`, `delta`, `session`, `done`) -> session + tool log persistence.
+  `reasoning`, `delta`, `session`, `done`) -> session + tool log persistence.
 - OpenAI-compatible streaming forwards chat-completion content deltas when available and falls back
 to a non-streaming completion if the upstream stream closes without visible text, preventing blank
 assistant turns from providers with unusual streaming/reasoning output.
 - Tool routing: deterministic command/intent routing first; safe read/search fallback via LLM tool
-selection; write/terminal actions stay explicit.
+  selection; write/terminal actions stay explicit.
 - Computer Use flow: `/computer ...` commands call the macOS harness for app listing, screenshots,
 accessibility-tree inspection, and explicit click/type/key actions. `/computer task ...` runs a
 bounded experimental loop that observes, asks the selected model for one structured action, checks
 policy, executes through the tool registry, and repeats until done/blocked/confirmed.
 - Memory flow: `/remember` and natural save intents write to Obsidian with routing/fallback logic;
 explicit memory-find intents route through `memory_search` first.
+- Telegram gateway flow: Telegram long polling -> allowlist check -> per-chat session lookup under
+  `~/.sankalp/gateway/telegram.json` -> `Agent.turn` -> chunked Telegram replies.
 - Title flow: immediate fallback title, then async global smallest-model title generation
-(provider-agnostic, manual renames preserved).
+  (provider-agnostic, manual renames preserved).
 - External model flow: Cloud-hosted vLLM endpoints are configured through the existing
 `local_openai`/OpenAI-compatible provider fields. Sankalp keeps tool execution and Computer Use
 local; only model inference, including any screenshot attachments supplied by the user task, is
@@ -76,25 +86,29 @@ sent to the configured endpoint.
 - Installed app serves one local origin: built WebUI + backend API on loopback.
 - macOS and Windows installers manage `~/.sankalp/app`, preserve user-owned data, and support
 Obsidian onboarding/auto-detection.
+- The macOS installer adds a user LaunchAgent (`ai.yantrai.sankalp.daemon`) with `RunAtLoad` and
+  `KeepAlive`; it starts after login and continues while the screen is locked.
 - Updates are manifest-driven (`update.json`) via `/api/app/update`; user confirms update/relaunch.
 
 ## Deployment Tooling
 
 - `scripts/setup_ec2_gpu.sh` prepares fresh AWS GPU instances for Sankalp-adjacent model serving:
-it installs Miniconda under `~/miniconda3` when missing, initializes bash shell integration, accepts
-the default Anaconda channel Terms of Service, verifies `nvidia-smi`, and checks Docker GPU access
-before vLLM/video-QA services are started.
+  it installs Miniconda under `~/miniconda3` when missing, initializes bash shell integration, accepts
+  the default Anaconda channel Terms of Service, verifies `nvidia-smi`, and checks Docker GPU access
+  before vLLM/video-QA services are started.
 
 ## Safety and Constraints
 
 - Loopback-only HTTP by default.
+- Telegram gateway denies unknown users unless Settings allowlists their Telegram user ID or
+  `SANKALP_TELEGRAM_ALLOW_ALL=1` is explicitly set for development.
 - File tools limited to configured roots.
 - Terminal tool disabled unless explicitly enabled.
 - Computer Use is experimental, macOS-only, and requires user-granted Accessibility and Screen
-Recording permissions. In dev mode those permissions belong to the launching app, usually Terminal
-or iTerm; `Sankalp.app` is the permission target only when running the installed bundle. The policy
-layer pauses before actions that may send, submit, delete, purchase, change settings, or handle
-sensitive data.
+  Recording permissions. In dev mode those permissions belong to the launching app, usually Terminal
+  or iTerm; `Sankalp.app` is the permission target only when running the installed bundle. The policy
+  layer pauses before actions that may send, submit, delete, purchase, change settings, or handle
+  sensitive data.
 - Tool-call audit trail (inputs, outputs, status, timestamps).
 
 ## Architecture Diagrams
@@ -104,7 +118,10 @@ sensitive data.
 ```mermaid
 flowchart LR
   U[User] --> W[SvelteKit WebUI]
+  U --> TG[Telegram]
   W -->|JSON/SSE| S[sankalp/server.py]
+  TG --> G[Telegram Gateway]
+  G --> A[Agent Core]
   S --> A[Agent Core]
   A --> P[LLM Providers]
   A --> T[Tool Registry]
@@ -113,6 +130,7 @@ flowchart LR
   A --> J[Session Store JSON]
   W --> D[Dexie IndexedDB UI Cache]
   S --> U2[Updater]
+  G --> GS[Gateway State JSON]
 ```
 
 ### Chat Streaming Runtime Flow

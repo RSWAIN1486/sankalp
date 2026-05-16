@@ -129,10 +129,10 @@ ensure_node() {
 }
 
 start_backend() {
-  say "Starting backend on $BACKEND_HOST:$BACKEND_PORT"
+  say "Starting Sankalp daemon on $BACKEND_HOST:$BACKEND_PORT"
   (
     cd "$ROOT_DIR"
-    SANKALP_HOST="$BACKEND_HOST" SANKALP_PORT="$BACKEND_PORT" nohup python3 server.py >>"$BACKEND_LOG" 2>&1 </dev/null &
+    SANKALP_HOST="$BACKEND_HOST" SANKALP_PORT="$BACKEND_PORT" nohup python3 -m sankalp.daemon >>"$BACKEND_LOG" 2>&1 </dev/null &
     echo $! >"$BACKEND_PID_FILE"
   )
 }
@@ -186,6 +186,7 @@ main() {
   fi
 
   say "Sankalp dev servers relaunched."
+  say "Daemon: running"
   say "Backend: http://$BACKEND_HOST:$BACKEND_PORT"
   say "Frontend: http://$FRONTEND_HOST:$FRONTEND_PORT"
   say "Logs: $BACKEND_LOG and $FRONTEND_LOG"

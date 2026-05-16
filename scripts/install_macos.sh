@@ -16,6 +16,7 @@ USE_LOCAL_SOURCE=0
 DEFAULT_INSTALL_DIR="$AGENT_HOME/app"
 PRESERVE_LOCAL_CHANGES="${SANKALP_PRESERVE_LOCAL_CHANGES:-0}"
 OBSIDIAN_ONBOARD="${SANKALP_OBSIDIAN_ONBOARD:-1}"
+LAUNCH_AGENT_LABEL="${SANKALP_LAUNCH_AGENT_LABEL:-ai.yantrai.sankalp.daemon}"
 
 say() {
   printf '%s\n' "$1"
@@ -209,6 +210,70 @@ install_app_bundle() {
   )
 }
 
+install_launch_agent() {
+  if [ "${SANKALP_INSTALL_LAUNCH_AGENT:-1}" != "1" ]; then
+    return
+  fi
+
+  launch_agents_dir="$HOME/Library/LaunchAgents"
+  plist_path="$launch_agents_dir/$LAUNCH_AGENT_LABEL.plist"
+  mkdir -p "$launch_agents_dir" "$AGENT_HOME/logs"
+
+  say "Installing Sankalp login daemon"
+  LAUNCH_AGENT_PLIST="$plist_path" \
+  LAUNCH_AGENT_LABEL="$LAUNCH_AGENT_LABEL" \
+  SANKALP_INSTALL_DIR="$INSTALL_DIR" \
+  SANKALP_AGENT_HOME="$AGENT_HOME" \
+  SANKALP_HOST="$SANKALP_HOST" \
+  SANKALP_PORT="$SANKALP_PORT" \
+  SANKALP_APP_PATH="$APP_PATH" \
+  python3 - <<'PY'
+import os
+import plistlib
+import shlex
+from pathlib import Path
+
+plist_path = Path(os.environ["LAUNCH_AGENT_PLIST"])
+install_dir = os.environ["SANKALP_INSTALL_DIR"]
+agent_home = os.environ["SANKALP_AGENT_HOME"]
+host = os.environ["SANKALP_HOST"]
+port = os.environ["SANKALP_PORT"]
+app_path = os.environ["SANKALP_APP_PATH"]
+command = (
+    f"cd {shlex.quote(install_dir)} && exec /usr/bin/env "
+    f"SANKALP_HOST={shlex.quote(host)} "
+    f"SANKALP_PORT={shlex.quote(port)} "
+    f"SANKALP_STATE_DIR={shlex.quote(agent_home)} "
+    f"SANKALP_APP_PATH={shlex.quote(app_path)} "
+    "python3 -m sankalp.daemon"
+)
+payload = {
+    "Label": os.environ["LAUNCH_AGENT_LABEL"],
+    "ProgramArguments": ["/bin/zsh", "-lc", command],
+    "RunAtLoad": True,
+    "KeepAlive": True,
+    "WorkingDirectory": install_dir,
+    "StandardOutPath": str(Path(agent_home) / "logs" / "Sankalp.daemon.log"),
+    "StandardErrorPath": str(Path(agent_home) / "logs" / "Sankalp.daemon.err.log"),
+    "EnvironmentVariables": {
+        "SANKALP_HOST": host,
+        "SANKALP_PORT": port,
+        "SANKALP_STATE_DIR": agent_home,
+        "SANKALP_APP_PATH": app_path,
+    },
+}
+with plist_path.open("wb") as handle:
+    plistlib.dump(payload, handle)
+PY
+
+  uid="$(id -u)"
+  launchctl bootout "gui/$uid" "$plist_path" >/dev/null 2>&1 || launchctl unload "$plist_path" >/dev/null 2>&1 || true
+  if ! launchctl bootstrap "gui/$uid" "$plist_path" >/dev/null 2>&1; then
+    launchctl load "$plist_path" >/dev/null 2>&1 || true
+  fi
+  launchctl kickstart -k "gui/$uid/$LAUNCH_AGENT_LABEL" >/dev/null 2>&1 || true
+}
+
 obsidian_onboarding() {
   if [ "$OBSIDIAN_ONBOARD" = "0" ]; then
     return
@@ -268,12 +333,14 @@ main() {
   build_webui
   free_port
   install_app_bundle
+  install_launch_agent
   obsidian_onboarding
   open_app
 
   say "Sankalp is installed at $APP_PATH"
   say "WebUI: http://$SANKALP_HOST:$SANKALP_PORT"
   say "Logs: $AGENT_HOME/logs/Sankalp.app.log"
+  say "Daemon logs: $AGENT_HOME/logs/Sankalp.daemon.log"
 }
 
 main "$@"
