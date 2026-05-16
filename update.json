@@ -1,9 +1,9 @@
 {
-  "version": "0.1.10",
+  "version": "0.1.11",
   "channel": "stable",
-  "title": "Experimental Computer Use for Mac OS",
+  "title": "Persistent Daemon Mode with Telegram Messaging Gateway",
   "notes": [
-    "Maintenance and quality improvements"
+    "Introduced persistent daemon mode with Telegram messaging gateway and automated macOS launch agent support"
   ],
   "minimum_supported_version": "0.1.0"
 }
