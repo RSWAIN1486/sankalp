@@ -45,6 +45,9 @@ This file is the minimal, user-facing feature map for the current product.
 - `/ls [path]` lists visible files and folders under configured local roots; simple file/folder
   questions route to this tool before calling a model. Ambiguous tool requests can also be routed by
   the LLM tool selector using the advertised tool catalog.
+- `/find <name>` recursively finds files or folders by name across configured local roots.
+- Allowed local roots can be saved in `Settings -> Memory`; `SANKALP_ALLOWED_ROOTS` remains an env
+  override for advanced launches.
 - Tool calls are logged in session activity for auditability.
 - `/research <query>` for web discovery + synthesis with source links.
 - `/fetch <url>` for readable-content extraction with provider-aware fallback.

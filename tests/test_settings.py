@@ -1,10 +1,11 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 import sankalp.settings as settings_module
 from sankalp import config as config_module
-from sankalp.settings import load_settings, save_settings
+from sankalp.settings import allowed_roots_from_settings, load_settings, save_settings
 
 
 class SettingsTests(unittest.TestCase):
@@ -113,6 +114,28 @@ class SettingsTests(unittest.TestCase):
             self.assertNotIn("telegram_bot_token", public)
             self.assertEqual(public["telegram_allowed_users"], "123,456")
             self.assertEqual(private["telegram_bot_token"], "telegram-secret")
+
+    def test_allowed_roots_can_be_saved_and_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_path = settings_module.SETTINGS_PATH
+            old_env = os.environ.get("SANKALP_ALLOWED_ROOTS")
+            root_a = Path(tmp) / "a"
+            root_b = Path(tmp) / "b"
+            root_a.mkdir()
+            root_b.mkdir()
+            settings_module.SETTINGS_PATH = Path(tmp) / "settings.json"
+            try:
+                os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                save_settings({"allowed_roots": f"{root_a}\n{root_b}"})
+                roots = allowed_roots_from_settings()
+            finally:
+                settings_module.SETTINGS_PATH = old_path
+                if old_env is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old_env
+
+            self.assertEqual(roots, [root_a.resolve(), root_b.resolve()])
 
 
 if __name__ == "__main__":

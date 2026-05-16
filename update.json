@@ -1,9 +1,9 @@
 {
-  "version": "0.1.12",
+  "version": "0.1.13",
   "channel": "stable",
-  "title": "File Listing Capability",
+  "title": "File Find Tool",
   "notes": [
-    "Add file listing capability using the /ls command and incorporate provider-specific model defaults into the WebUI settings and chat composer"
+    "Add file_find tool for recursive file searches and improve CLI provider validation"
   ],
   "minimum_supported_version": "0.1.0"
 }

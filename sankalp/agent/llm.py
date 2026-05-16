@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import urllib.request
@@ -630,6 +631,12 @@ class LLMAdapter:
         yield {"type": "response_id", "response_id": response_id, "provider": "local-openai"}
 
     def _codex(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str) -> dict[str, Any]:
+        if not shutil.which("codex"):
+            return {
+                "text": "Codex CLI is selected, but the `codex` command was not found on this daemon's PATH. Install Codex CLI or choose another default provider in Settings -> Provider.",
+                "response_id": None,
+                "provider": "codex",
+            }
         transcript = "\n".join(f"{item.get('role', 'user')}: {item.get('content', '')}" for item in messages[-12:])
         prompt = (
             self._developer_prompt(memory_context)
@@ -724,6 +731,13 @@ class LLMAdapter:
         yield {"type": "response_id", "response_id": None, "provider": "gemini"}
 
     def _codex_stream(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str):
+        if not shutil.which("codex"):
+            yield {
+                "type": "delta",
+                "text": "Codex CLI is selected, but the `codex` command was not found on this daemon's PATH. Install Codex CLI or choose another default provider in Settings -> Provider.",
+            }
+            yield {"type": "response_id", "response_id": None, "provider": "codex"}
+            return
         transcript = "\n".join(f"{item.get('role', 'user')}: {item.get('content', '')}" for item in messages[-12:])
         prompt = (
             self._developer_prompt(memory_context)

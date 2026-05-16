@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
-from sankalp.config import STATE_DIR, VAULT_DIR
+from sankalp.config import ROOT, STATE_DIR, VAULT_DIR
 
 
 SETTINGS_PATH = STATE_DIR / "settings.json"
@@ -23,6 +24,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "telegram_allow_all": False,
     "obsidian_vault_path": str(VAULT_DIR),
     "obsidian_workspace_path": "",
+    "allowed_roots": "",
 }
 
 
@@ -62,6 +64,7 @@ def save_settings(update: dict[str, Any]) -> dict[str, Any]:
         "telegram_allowed_users",
         "obsidian_vault_path",
         "obsidian_workspace_path",
+        "allowed_roots",
     ]:
         if key in update:
             current[key] = str(update.get(key) or "").strip()
@@ -83,6 +86,45 @@ def save_settings(update: dict[str, Any]) -> dict[str, Any]:
         current.pop("telegram_bot_token", None)
     SETTINGS_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
     return load_settings()
+
+
+def allowed_roots_from_settings() -> list[Path]:
+    env_configured = os.environ.get("SANKALP_ALLOWED_ROOTS")
+    if env_configured:
+        return _unique_existing_roots(_split_env_roots(env_configured))
+
+    settings = load_settings(include_secrets=True)
+    configured = str(settings.get("allowed_roots") or "").strip()
+    if configured:
+        roots = _split_saved_roots(configured)
+    else:
+        roots = [str(ROOT), str(settings.get("obsidian_vault_path") or VAULT_DIR)]
+    return _unique_existing_roots(roots)
+
+
+def _split_env_roots(value: str) -> list[str]:
+    return [part.strip() for part in value.split(os.pathsep) if part.strip()]
+
+
+def _split_saved_roots(value: str) -> list[str]:
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    return [line.strip() for line in normalized.split("\n") if line.strip()]
+
+
+def _unique_existing_roots(values: list[str]) -> list[Path]:
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for value in values:
+        try:
+            path = Path(value).expanduser().resolve()
+        except Exception:
+            continue
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(path)
+    return roots or [ROOT.resolve(), VAULT_DIR.resolve()]
 
 
 def auto_detect_obsidian_vault(accessible_only: bool = True) -> str:

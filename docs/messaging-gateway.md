@@ -59,6 +59,7 @@ python3 -m sankalp.daemon --telegram --no-http
 - Session mappings and the Telegram update offset are stored in `~/.sankalp/gateway/telegram.json`.
 - `/new` starts a fresh Sankalp session for the current Telegram chat.
 - `/ls [path]` lists files and folders under Sankalp's configured local roots.
+- `/find <name>` recursively finds matching files or folders across configured local roots.
 - Long answers are split into Telegram-safe chunks.
 - Non-text messages are acknowledged but not processed yet.
 
@@ -71,12 +72,16 @@ python3 -m sankalp.daemon --telegram --no-http
 /status
 /new
 /ls
+/find
 ```
 
 All normal text messages are routed through `Agent.turn`, so existing memory, tools, provider
 selection, and session behavior still apply. Telegram uses the default provider/model saved in
 `Settings -> Provider`; WebUI composer overrides are browser-local and do not affect Telegram unless
 they are saved as the default.
+
+Local file access is limited to roots saved in `Settings -> Memory` under `Allowed local roots`, or
+to `SANKALP_ALLOWED_ROOTS` when that environment override is set.
 
 ## Roadmap
 

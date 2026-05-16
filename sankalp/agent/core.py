@@ -230,8 +230,16 @@ class Agent:
             path = content.split(maxsplit=1)[1].strip() if len(content.split(maxsplit=1)) > 1 else "."
             return self._route_file_list(session, path)
 
+        if lowered.startswith(("/find ", "/find-file ", "/find-folder ")):
+            query = content.split(maxsplit=1)[1].strip() if len(content.split(maxsplit=1)) > 1 else ""
+            kind = "directory" if lowered.startswith("/find-folder ") else "file" if lowered.startswith("/find-file ") else "any"
+            return self._route_file_find(session, query, kind=kind)
+
         if self._is_file_list_request(lowered):
             return self._route_file_list(session, self._file_list_path_from_request(content))
+
+        if self._is_file_find_request(lowered):
+            return self._route_file_find(session, self._file_find_query_from_request(content))
 
         if lowered.startswith("/append "):
             body = content[len("/append "):]
@@ -691,6 +699,13 @@ class Agent:
         if tool == "file_list":
             path = str(arguments.get("path") or ".").strip() or "."
             return self._route_file_list(session, path)
+        if tool == "file_find":
+            query = str(arguments.get("query") or arguments.get("name") or "").strip()
+            if not query:
+                return None
+            path = str(arguments.get("path") or "").strip()
+            kind = str(arguments.get("kind") or "any").strip().lower()
+            return self._route_file_find(session, query, path=path, kind=kind)
         if tool == "computer_status":
             result = self.tools.call("computer_status")
             session.tool_calls.append(asdict(result))
@@ -738,6 +753,11 @@ class Agent:
                 "arguments": {"path": "directory path inside an allowed root, or . for the default root"},
             },
             {
+                "name": "file_find",
+                "description": "Recursively find files or folders by name across allowed local roots.",
+                "arguments": {"query": "file or folder name fragment to find", "kind": "any, file, or directory", "path": "optional allowed root/subfolder"},
+            },
+            {
                 "name": "computer_status",
                 "description": "Check whether experimental macOS Computer Use is available and what permissions it needs.",
                 "arguments": {},
@@ -768,6 +788,13 @@ class Agent:
             return f"List failed: {result.output}"
         return self._format_file_list(result.output)
 
+    def _route_file_find(self, session: Session, query: str, path: str = "", kind: str = "any") -> str:
+        result = self.tools.call("file_find", query=query, path=path, kind=kind, limit=80, max_depth=10)
+        session.tool_calls.append(asdict(result))
+        if result.status != "ok":
+            return f"Find failed: {result.output}"
+        return self._format_file_find(query, result.output)
+
     def _format_file_list(self, output: dict[str, Any]) -> str:
         entries = output.get("entries") or []
         lines = [f"I can see this directory: `{output.get('path', '.')}`"]
@@ -786,6 +813,24 @@ class Agent:
             lines.append("\nOutput was truncated. Use `/ls <path>` for a narrower directory.")
         return "\n".join(lines)
 
+    def _format_file_find(self, query: str, output: dict[str, Any]) -> str:
+        matches = output.get("matches") or []
+        lines = [f"Search results for `{query}`:"]
+        if not matches:
+            lines.append("\nNo matching files or folders found under the allowed roots.")
+        else:
+            lines.append("")
+            for item in matches:
+                icon = "dir" if item.get("type") == "directory" else "file"
+                lines.append(f"- `{item.get('path')}` ({icon})")
+        roots = output.get("searched_roots") or []
+        if roots:
+            lines.extend(["", "Searched roots:"])
+            lines.extend(f"- `{root}`" for root in roots)
+        if output.get("truncated"):
+            lines.append("\nOutput was truncated. Use a narrower query or `/find <name> in <path>`.")
+        return "\n".join(lines)
+
     def _is_file_list_request(self, lowered: str) -> bool:
         action = r"\b(list|show|see|view|display)\b"
         target = r"\b(files?|folders?|directories)\b"
@@ -794,12 +839,25 @@ class Agent:
             or re.search(fr"{target}.*\b(visible|available|present|there|see)\b", lowered)
         )
 
+    def _is_file_find_request(self, lowered: str) -> bool:
+        action = r"\b(find|locate|search for|look for)\b"
+        target = r"\b(files?|folders?|directories)\b"
+        return bool(re.search(fr"{action}.*{target}", lowered) or re.search(fr"{target}.*{action}", lowered))
+
     def _file_list_path_from_request(self, content: str) -> str:
         match = re.search(r"\b(?:in|under|inside)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|/[^\n?]+|~[^\n?]+)", content, flags=re.I)
         if not match:
             return "."
         path = match.group(1).strip().strip("`\"'")
         return path.strip() or "."
+
+    def _file_find_query_from_request(self, content: str) -> str:
+        match = re.search(r"\b(?:named|called|matching|for)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|[A-Za-z0-9_. -]+)", content, flags=re.I)
+        if match:
+            return match.group(1).strip().strip("`\"' .?")
+        cleaned = re.sub(r"\b(can you|could you|please|pls|find|locate|search for|look for|recursively|recursive|files?|folders?|directories|on my system|across|allowed roots|root folders)\b", " ", content, flags=re.I)
+        cleaned = re.sub(r"\b(in|under|inside)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|/[^\n?]+|~[^\n?]+)", " ", cleaned, flags=re.I)
+        return " ".join(cleaned.strip(" ?").split())
 
     def _format_browser_search(self, query: str, output: dict[str, Any]) -> str:
         results = output.get("results") or []

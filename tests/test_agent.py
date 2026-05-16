@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -381,15 +382,21 @@ class AgentTests(unittest.TestCase):
                 raise RuntimeError("selector should not be called")
 
         with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("SANKALP_ALLOWED_ROOTS")
             root = Path(tmp)
             (root / "Projects").mkdir()
             (root / "notes.md").write_text("hello", encoding="utf-8")
-            memory = ObsidianMemory(root / "vault")
-            tools = ToolRegistry(memory)
-            tools.roots = [root.resolve()]
-            agent = Agent(SessionStore(root / "sessions"), memory, tools, BrokenLLM())
-
-            result = agent.turn(None, "What folders do you see on my system?")
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(root)
+            try:
+                memory = ObsidianMemory(root / "vault")
+                tools = ToolRegistry(memory)
+                agent = Agent(SessionStore(root / "sessions"), memory, tools, BrokenLLM())
+                result = agent.turn(None, "What folders do you see on my system?")
+            finally:
+                if old is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old
 
             self.assertEqual(result["tool_calls"][0]["name"], "file_list")
             self.assertIn("Projects", result["message"]["content"])
@@ -397,19 +404,47 @@ class AgentTests(unittest.TestCase):
 
     def test_ls_command_lists_requested_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("SANKALP_ALLOWED_ROOTS")
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
             (workspace / "README.md").write_text("hello", encoding="utf-8")
-            memory = ObsidianMemory(root / "vault")
-            tools = ToolRegistry(memory)
-            tools.roots = [root.resolve()]
-            agent = Agent(SessionStore(root / "sessions"), memory, tools, FakeLLM())
-
-            result = agent.turn(None, f"/ls {workspace}")
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(root)
+            try:
+                memory = ObsidianMemory(root / "vault")
+                tools = ToolRegistry(memory)
+                agent = Agent(SessionStore(root / "sessions"), memory, tools, FakeLLM())
+                result = agent.turn(None, f"/ls {workspace}")
+            finally:
+                if old is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old
 
             self.assertEqual(result["tool_calls"][0]["name"], "file_list")
             self.assertIn("README.md", result["message"]["content"])
+
+    def test_find_command_searches_allowed_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("SANKALP_ALLOWED_ROOTS")
+            root = Path(tmp)
+            workspace = root / "workspace"
+            (workspace / "deep").mkdir(parents=True)
+            (workspace / "deep" / "roadmap.md").write_text("hello", encoding="utf-8")
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(workspace)
+            try:
+                memory = ObsidianMemory(root / "vault")
+                tools = ToolRegistry(memory)
+                agent = Agent(SessionStore(root / "sessions"), memory, tools, FakeLLM())
+                result = agent.turn(None, "/find roadmap")
+            finally:
+                if old is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old
+
+            self.assertEqual(result["tool_calls"][0]["name"], "file_find")
+            self.assertIn("roadmap.md", result["message"]["content"])
 
     def test_turn_passes_attachments_and_options_to_llm(self):
         class CaptureLLM:

@@ -51,7 +51,8 @@ scroll regions while the header, settings entry point, and composer stay fixed i
 ## Persistence Model
 
 - `~/.sankalp/app`: managed application checkout (resettable by installer/update flow).
-- `~/.sankalp/settings.json`: local config and provider/research settings (keys masked in API reads).
+- `~/.sankalp/settings.json`: local config, provider/research settings, and user-approved local file
+  roots (keys masked in API reads).
 - `~/.sankalp/sessions/`: operational session JSON.
 - `~/.sankalp/gateway/telegram.json`: Telegram update offset and chat/thread-to-session mapping.
 - Obsidian vault: durable user memory (`People/`, `Projects/`, `Inbox/`, `Decisions/`, `Sessions/`).
@@ -74,9 +75,9 @@ bounded experimental loop that observes, asks the selected model for one structu
 policy, executes through the tool registry, and repeats until done/blocked/confirmed.
 - Memory flow: `/remember` and natural save intents write to Obsidian with routing/fallback logic;
   explicit memory-find intents route through `memory_search` first.
-- File flow: `/ls [path]` and natural file/folder listing requests call `file_list` before model
-  routing; ambiguous requests can still be selected through the LLM tool router. File tools remain
-  limited to configured allowed roots.
+- File flow: `/ls [path]`, `/find <name>`, and natural file/folder requests call `file_list` or
+  `file_find` before model routing; ambiguous requests can still be selected through the LLM tool
+  router. File tools remain limited to configured allowed roots.
 - Telegram gateway flow: Telegram long polling -> allowlist check -> per-chat session lookup under
   `~/.sankalp/gateway/telegram.json` -> `Agent.turn` -> chunked Telegram replies.
 - Title flow: immediate fallback title, then async global smallest-model title generation
@@ -113,7 +114,8 @@ Obsidian onboarding/auto-detection.
 - Loopback-only HTTP by default.
 - Telegram gateway denies unknown users unless Settings allowlists their Telegram user ID or
   `SANKALP_TELEGRAM_ALLOW_ALL=1` is explicitly set for development.
-- File tools limited to configured roots.
+- File tools limited to configured roots from `Settings -> Memory`, with `SANKALP_ALLOWED_ROOTS` as
+  an environment override.
 - Terminal tool disabled unless explicitly enabled.
 - Computer Use is experimental, macOS-only, and requires user-granted Accessibility and Screen
   Recording permissions. In dev mode those permissions belong to the launching app, usually Terminal

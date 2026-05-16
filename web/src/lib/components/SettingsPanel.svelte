@@ -162,7 +162,8 @@
       method: "POST",
       body: JSON.stringify({
         obsidian_vault_path: settings.obsidian_vault_path || "",
-        obsidian_workspace_path: settings.obsidian_workspace_path || ""
+        obsidian_workspace_path: settings.obsidian_workspace_path || "",
+        allowed_roots: settings.allowed_roots || ""
       })
     });
     settings = data.settings || {};
@@ -483,6 +484,14 @@
           {/each}
         </select>
       </label>
+      <label>Allowed local roots
+        <textarea
+          bind:value={settings.allowed_roots}
+          placeholder={"/Users/rswai/Desktop/YantrAI\n/Users/rswai/Documents"}
+          rows="4"
+        ></textarea>
+      </label>
+      <p>One folder path per line. Leave blank to allow only the Sankalp app folder and configured Obsidian vault.</p>
       {#if macosAvailable && !obsidianState.installed}
         <p>Obsidian is not installed. Install it first, then pick your vault.</p>
       {/if}

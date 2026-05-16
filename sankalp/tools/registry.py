@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import fnmatch
+import os
 import shlex
 import subprocess
 import time
@@ -7,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from sankalp.computer import MacOSComputerUse
-from sankalp.config import ALLOW_TERMINAL, allowed_roots
+from sankalp.config import ALLOW_TERMINAL
 from sankalp.memory import ObsidianMemory
-from sankalp.settings import load_settings
+from sankalp.settings import allowed_roots_from_settings, load_settings
 
 from .base import ToolResult
 from .web_research import WebResearchClient
@@ -18,7 +20,7 @@ from .web_research import WebResearchClient
 class ToolRegistry:
     def __init__(self, memory: ObsidianMemory):
         self.memory = memory
-        self.roots = allowed_roots()
+        self.roots = allowed_roots_from_settings()
         self.computer = MacOSComputerUse()
 
     def call(self, name: str, **kwargs: Any) -> ToolResult:
@@ -34,6 +36,8 @@ class ToolRegistry:
             return self.file_read(**kwargs)
         if name == "file_list":
             return self.file_list(**kwargs)
+        if name == "file_find":
+            return self.file_find(**kwargs)
         if name == "file_append":
             return self.file_append(**kwargs)
         if name == "terminal":
@@ -165,6 +169,74 @@ class ToolRegistry:
         except Exception as exc:
             return ToolResult.run("file_list", {"path": path}, {"error": str(exc), "resolved": str(resolved)}, "error", started)
 
+    def file_find(
+        self,
+        query: str,
+        path: str = "",
+        kind: str = "any",
+        limit: int = 80,
+        max_depth: int = 8,
+        include_hidden: bool = False,
+    ) -> ToolResult:
+        started = time.time()
+        needle = (query or "").strip()
+        if not needle:
+            return ToolResult.run("file_find", {"query": query}, {"error": "query is empty"}, "error", started)
+        roots = self._find_roots(path)
+        if not roots:
+            return ToolResult.run("file_find", {"query": query, "path": path}, {"error": "path is outside allowed roots"}, "blocked", started)
+        limit = max(1, min(int(limit or 80), 300))
+        max_depth = max(0, min(int(max_depth or 8), 20))
+        matches: list[dict[str, str]] = []
+        visited = 0
+        pattern = needle.lower()
+        wildcard = any(char in pattern for char in "*?[]")
+        for root in roots:
+            for current, dirnames, filenames in os.walk(root):
+                current_path = Path(current)
+                try:
+                    depth = len(current_path.relative_to(root).parts)
+                except ValueError:
+                    depth = 0
+                if depth >= max_depth:
+                    dirnames[:] = []
+                if not include_hidden:
+                    dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+                    filenames = [name for name in filenames if not name.startswith(".")]
+                names = []
+                if kind in {"any", "directory", "folder", "dir"}:
+                    names.extend((name, "directory") for name in dirnames)
+                if kind in {"any", "file"}:
+                    names.extend((name, "file") for name in filenames)
+                for name, item_type in sorted(names, key=lambda item: item[0].lower()):
+                    visited += 1
+                    lower = name.lower()
+                    if (wildcard and fnmatch.fnmatch(lower, pattern)) or (not wildcard and pattern in lower):
+                        matches.append({"name": name, "path": str(current_path / name), "type": item_type})
+                        if len(matches) >= limit:
+                            return ToolResult.run(
+                                "file_find",
+                                {"query": needle, "path": path, "kind": kind, "limit": limit, "max_depth": max_depth},
+                                {
+                                    "matches": matches,
+                                    "truncated": True,
+                                    "searched_roots": [str(item) for item in roots],
+                                    "visited": visited,
+                                },
+                                started_at=started,
+                            )
+        return ToolResult.run(
+            "file_find",
+            {"query": needle, "path": path, "kind": kind, "limit": limit, "max_depth": max_depth},
+            {
+                "matches": matches,
+                "truncated": False,
+                "searched_roots": [str(item) for item in roots],
+                "visited": visited,
+            },
+            started_at=started,
+        )
+
     def file_append(self, path: str, text: str) -> ToolResult:
         started = time.time()
         resolved = self._resolve_allowed(path)
@@ -183,6 +255,7 @@ class ToolRegistry:
         if not ALLOW_TERMINAL:
             return ToolResult.run("terminal", {"command": command}, {"error": "terminal disabled; set SANKALP_ALLOW_TERMINAL=1"}, "blocked", started)
         try:
+            self._refresh_roots()
             argv = shlex.split(command)
             if not argv:
                 return ToolResult.run("terminal", {"command": command}, {"error": "empty command"}, "error", started)
@@ -297,6 +370,7 @@ class ToolRegistry:
         return ToolResult.run("computer_wait", {"seconds": seconds}, output, started_at=started)
 
     def _resolve_allowed(self, path: str) -> Path | None:
+        self._refresh_roots()
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             candidate = self.roots[0] / candidate
@@ -311,3 +385,15 @@ class ToolRegistry:
             except ValueError:
                 continue
         return None
+
+    def _find_roots(self, path: str = "") -> list[Path]:
+        self._refresh_roots()
+        if not path:
+            return [root for root in self.roots if root.exists() and root.is_dir()]
+        resolved = self._resolve_allowed(path)
+        if resolved is None or not resolved.exists() or not resolved.is_dir():
+            return []
+        return [resolved]
+
+    def _refresh_roots(self) -> None:
+        self.roots = allowed_roots_from_settings()

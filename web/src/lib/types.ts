@@ -49,6 +49,7 @@ export type Settings = {
   has_openai_api_key?: boolean;
   obsidian_vault_path?: string;
   obsidian_workspace_path?: string;
+  allowed_roots?: string;
 };
 
 export type ComposerOptions = {
