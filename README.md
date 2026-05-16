@@ -15,6 +15,7 @@ Sankalp is a local-first AI assistant with a minimalist WebUI, auditable tool ac
 - Tooling for web fetch/search and safe local file actions.
 - Slash commands and capability discovery in `Settings -> Capabilities`.
 - Daemon mode with an optional Telegram messaging gateway configured from Settings.
+- Minimal macOS menu-bar status item for the installed app.
 - Experimental macOS Computer Use via `/computer ...` (app listing, accessibility tree/screenshot
   inspection, explicit click/type/key/scroll actions, and bounded `/computer task ...` loop).
 - Local installed app flow with in-app update checks.

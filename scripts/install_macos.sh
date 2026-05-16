@@ -230,7 +230,6 @@ install_launch_agent() {
   python3 - <<'PY'
 import os
 import plistlib
-import shlex
 from pathlib import Path
 
 plist_path = Path(os.environ["LAUNCH_AGENT_PLIST"])
@@ -239,17 +238,10 @@ agent_home = os.environ["SANKALP_AGENT_HOME"]
 host = os.environ["SANKALP_HOST"]
 port = os.environ["SANKALP_PORT"]
 app_path = os.environ["SANKALP_APP_PATH"]
-command = (
-    f"cd {shlex.quote(install_dir)} && exec /usr/bin/env "
-    f"SANKALP_HOST={shlex.quote(host)} "
-    f"SANKALP_PORT={shlex.quote(port)} "
-    f"SANKALP_STATE_DIR={shlex.quote(agent_home)} "
-    f"SANKALP_APP_PATH={shlex.quote(app_path)} "
-    "python3 -m sankalp.daemon"
-)
+app_executable = str(Path(app_path) / "Contents" / "MacOS" / "Sankalp")
 payload = {
     "Label": os.environ["LAUNCH_AGENT_LABEL"],
-    "ProgramArguments": ["/bin/zsh", "-lc", command],
+    "ProgramArguments": [app_executable],
     "RunAtLoad": True,
     "KeepAlive": True,
     "WorkingDirectory": install_dir,
@@ -260,6 +252,7 @@ payload = {
         "SANKALP_PORT": port,
         "SANKALP_STATE_DIR": agent_home,
         "SANKALP_APP_PATH": app_path,
+        "SANKALP_MENU_BAR_LOGIN": "1",
     },
 }
 with plist_path.open("wb") as handle:

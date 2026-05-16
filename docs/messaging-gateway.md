@@ -45,8 +45,10 @@ python3 -m sankalp.daemon --telegram --no-http
   available during local development.
 - `scripts/install_macos.sh` installs a user LaunchAgent at
   `~/Library/LaunchAgents/ai.yantrai.sankalp.daemon.plist`.
-- The LaunchAgent has `RunAtLoad` and `KeepAlive`, so Sankalp starts after macOS login and continues
-  while the screen is locked.
+- The LaunchAgent starts the installed `Sankalp.app`. The app stays in the menu bar, starts/checks the
+  daemon, and exposes quick actions to open the WebUI or restart the daemon.
+- The LaunchAgent has `RunAtLoad` and `KeepAlive`, so the menu-bar app and daemon start after macOS
+  login and continue while the screen is locked.
 - This is intentionally a user LaunchAgent, not a root LaunchDaemon. It does not run before the first
   user login, because Sankalp uses user-local state, user app permissions, and `~/.sankalp`.
 

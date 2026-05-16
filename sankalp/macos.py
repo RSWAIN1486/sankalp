@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import shlex
 import shutil
 import stat
 import subprocess
@@ -136,6 +137,8 @@ def _plist() -> str:
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
+  <key>LSUIElement</key>
+  <true/>
   <key>NSDocumentsFolderUsageDescription</key>
   <string>Sankalp reads your Obsidian vault when you configure memory sync.</string>
   <key>NSDesktopFolderUsageDescription</key>
@@ -151,10 +154,10 @@ def _write_native_launcher(executable: Path, resources: Path, repo_root: Path) -
     clang = shutil.which("clang")
     if not clang:
         return "shell"
-    source = resources / "launcher.c"
+    source = resources / "launcher.m"
     source.write_text(_native_launcher_source(repo_root), encoding="utf-8")
     result = subprocess.run(
-        [clang, str(source), "-O2", "-o", str(executable)],
+        [clang, str(source), "-fobjc-arc", "-framework", "Cocoa", "-O2", "-o", str(executable)],
         text=True,
         capture_output=True,
         timeout=60,
@@ -178,99 +181,130 @@ def _codesign(app_path: Path) -> None:
 
 
 def _native_launcher_source(repo_root: Path) -> str:
-    return f'''#include <crt_externs.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <spawn.h>
-#include <stdio.h>
+    repo = str(repo_root)
+    repo_shell = shlex.quote(repo)
+    repo_objc = _objc_string(repo)
+    repo_shell_objc = _objc_string(repo_shell)
+    app_path_objc = _objc_string(str(APP_PATH))
+    app_path_shell_objc = _objc_string(shlex.quote(str(APP_PATH)))
+    return f'''#import <Cocoa/Cocoa.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
-extern char **environ;
+static NSString * const SankalpURL = @"http://{HOST}:{PORT}";
+static NSString * const SankalpRepo = @"{repo_objc}";
+static NSString * const SankalpBaseURL = @"localhost:{PORT}";
 
-static int run_quiet(const char *cmd) {{
-  int rc = system(cmd);
+static int run_quiet(NSString *cmd) {{
+  int rc = system([cmd UTF8String]);
   if (rc == -1) return 1;
   if (WIFEXITED(rc)) return WEXITSTATUS(rc);
   return 1;
 }}
 
-static void open_url(void) {{
-  pid_t pid;
-  char *argv[] = {{"/usr/bin/open", "http://{HOST}:{PORT}", NULL}};
-  posix_spawn(&pid, "/usr/bin/open", NULL, NULL, argv, environ);
+static BOOL sankalp_live(void) {{
+  return run_quiet(@"/usr/bin/curl -fsS http://{HOST}:{PORT}/api/health >/dev/null 2>&1") == 0;
+}}
+
+static void open_webui(void) {{
+  [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:SankalpURL]];
 }}
 
 static void free_port(void) {{
-  run_quiet("/bin/sh -c 'pids=$(/usr/sbin/lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null); [ -z \"$pids\" ] || /bin/kill -TERM $pids >/dev/null 2>&1'");
-  usleep(500000);
-  run_quiet("/bin/sh -c 'pids=$(/usr/sbin/lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null); [ -z \"$pids\" ] || /bin/kill -KILL $pids >/dev/null 2>&1'");
+  run_quiet(@"/bin/sh -c 'pids=$(/usr/sbin/lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null); [ -z \\"$pids\\" ] || /bin/kill -TERM $pids >/dev/null 2>&1'");
+  [NSThread sleepForTimeInterval:0.5];
+  run_quiet(@"/bin/sh -c 'pids=$(/usr/sbin/lsof -tiTCP:{PORT} -sTCP:LISTEN 2>/dev/null); [ -z \\"$pids\\" ] || /bin/kill -KILL $pids >/dev/null 2>&1'");
 }}
 
-int main(void) {{
-  const char *repo = "{repo_root}";
-  const char *home = getenv("HOME");
-  char state_dir[4096];
-  char log_dir[4096];
-  char log_file[4096];
-  char health_cmd[512];
+static void start_daemon(void) {{
+  if (sankalp_live()) return;
+  run_quiet(@"mkdir -p \\"$HOME/.sankalp/logs\\"");
+  NSString *cmd =
+    @"cd {repo_shell_objc} && "
+    @"SANKALP_HOST={HOST} SANKALP_PORT={PORT} "
+    @"SANKALP_REPO_DIR={repo_shell_objc} "
+    @"SANKALP_APP_PATH={app_path_shell_objc} "
+    @"nohup /usr/bin/python3 -m sankalp.daemon >>\\"$HOME/.sankalp/logs/Sankalp.app.log\\" 2>&1 </dev/null &";
+  run_quiet(cmd);
+}}
 
-  snprintf(health_cmd, sizeof(health_cmd), "/usr/bin/curl -fsS http://{HOST}:{PORT}/api/health >/dev/null 2>&1");
-  if (run_quiet(health_cmd) == 0) {{
-    open_url();
-    return 0;
+@interface SankalpAppDelegate : NSObject <NSApplicationDelegate>
+@property(nonatomic, strong) NSStatusItem *statusItem;
+@property(nonatomic, strong) NSMenuItem *statusLine;
+@property(nonatomic, strong) NSMenuItem *baseURLLine;
+@property(nonatomic, strong) NSTimer *timer;
+@end
+
+@implementation SankalpAppDelegate
+
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {{
+  [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+  self.statusItem.button.title = @"S";
+  self.statusItem.button.toolTip = @"Sankalp";
+
+  NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Sankalp"];
+  NSMenuItem *titleLine = [[NSMenuItem alloc] initWithTitle:@"Sankalp" action:nil keyEquivalent:@""];
+  titleLine.enabled = NO;
+  [menu addItem:titleLine];
+  self.statusLine = [[NSMenuItem alloc] initWithTitle:@"Sankalp: Checking..." action:nil keyEquivalent:@""];
+  self.statusLine.enabled = NO;
+  [menu addItem:self.statusLine];
+  self.baseURLLine = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Base URL: %@", SankalpBaseURL] action:nil keyEquivalent:@""];
+  self.baseURLLine.enabled = NO;
+  [menu addItem:self.baseURLLine];
+  [menu addItem:[NSMenuItem separatorItem]];
+  [menu addItem:[[NSMenuItem alloc] initWithTitle:@"Open WebUI" action:@selector(openWebUI:) keyEquivalent:@"o"]];
+  [menu addItem:[[NSMenuItem alloc] initWithTitle:@"Restart Daemon" action:@selector(restartDaemon:) keyEquivalent:@"r"]];
+  self.statusItem.menu = menu;
+
+  start_daemon();
+  [self refreshStatus:nil];
+  self.timer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(refreshStatus:) userInfo:nil repeats:YES];
+
+  const char *loginLaunch = getenv("SANKALP_MENU_BAR_LOGIN");
+  if (!(loginLaunch && strcmp(loginLaunch, "1") == 0)) {{
+    open_webui();
   }}
+}}
+
+- (void)refreshStatus:(id)sender {{
+  BOOL live = sankalp_live();
+  self.statusItem.button.title = live ? @"S" : @"S!";
+  self.statusLine.title = live ? @"Sankalp: Live" : @"Sankalp: Offline";
+}}
+
+- (void)openWebUI:(id)sender {{
+  start_daemon();
+  open_webui();
+  [self refreshStatus:nil];
+}}
+
+- (void)restartDaemon:(id)sender {{
   free_port();
+  start_daemon();
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{{
+    [self refreshStatus:nil];
+  }});
+}}
 
-  if (!home) home = "/tmp";
-  snprintf(state_dir, sizeof(state_dir), "%s/.sankalp", home);
-  snprintf(log_dir, sizeof(log_dir), "%s/.sankalp/logs", home);
-  mkdir(state_dir, 0700);
-  mkdir(log_dir, 0700);
-  snprintf(log_file, sizeof(log_file), "%s/Sankalp.app.log", log_dir);
+@end
 
-  int fd = open(log_file, O_CREAT | O_WRONLY | O_APPEND, 0600);
-  if (fd < 0) fd = open("/dev/null", O_WRONLY);
-
-  posix_spawn_file_actions_t actions;
-  posix_spawn_file_actions_init(&actions);
-  posix_spawn_file_actions_adddup2(&actions, fd, STDOUT_FILENO);
-  posix_spawn_file_actions_adddup2(&actions, fd, STDERR_FILENO);
-  posix_spawn_file_actions_addclose(&actions, fd);
-
-  posix_spawnattr_t attrs;
-  posix_spawnattr_init(&attrs);
-  posix_spawnattr_setflags(&attrs, POSIX_SPAWN_SETSID);
-
-  chdir(repo);
-  setenv("SANKALP_HOST", "{HOST}", 0);
-  setenv("SANKALP_PORT", "{PORT}", 0);
-  setenv("SANKALP_REPO_DIR", repo, 1);
-
-  pid_t server_pid;
-  char *argv[] = {{"/usr/bin/python3", "-m", "sankalp.daemon", NULL}};
-  int spawn_rc = posix_spawn(&server_pid, "/usr/bin/python3", &actions, &attrs, argv, environ);
-  posix_spawn_file_actions_destroy(&actions);
-  posix_spawnattr_destroy(&attrs);
-  if (fd >= 0) close(fd);
-
-  if (spawn_rc != 0) {{
-    return spawn_rc;
-  }}
-
-  for (int i = 0; i < 80; i++) {{
-    if (run_quiet(health_cmd) == 0) {{
-      open_url();
-      return 0;
-    }}
-    usleep(250000);
+int main(int argc, const char * argv[]) {{
+  @autoreleasepool {{
+    NSApplication *app = [NSApplication sharedApplication];
+    SankalpAppDelegate *delegate = [[SankalpAppDelegate alloc] init];
+    app.delegate = delegate;
+    [app run];
   }}
   return 0;
 }}
 '''
+
+
+def _objc_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _launcher(repo_root: Path) -> str:

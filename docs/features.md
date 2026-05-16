@@ -60,6 +60,8 @@ This file is the minimal, user-facing feature map for the current product.
 - Gateway commands include `/start`, `/help`, `/whoami`, `/status`, and `/new`.
 - Dev relaunch starts the daemon; macOS install adds a user LaunchAgent with `RunAtLoad` and
   `KeepAlive`.
+- Installed macOS builds include a minimal menu-bar item showing live/offline state, the local base
+  URL, and actions to open the WebUI or restart the daemon.
 
 ## Skills and Capabilities
 
