@@ -50,6 +50,24 @@ class ToolTests(unittest.TestCase):
             self.assertTrue(any(path.endswith("invoice_alpha.md") for path in paths))
             self.assertTrue(any(path.endswith("invoice_beta") for path in paths))
 
+    def test_file_find_path_resolution_is_case_tolerant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get("SANKALP_ALLOWED_ROOTS")
+            root = Path(tmp) / "Desktop"
+            (root / "Personal" / "health").mkdir(parents=True)
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(root)
+            try:
+                tools = ToolRegistry(ObsidianMemory(Path(tmp) / "vault"))
+                result = tools.call("file_find", query="health", path=str(root / "personal"), kind="directory")
+            finally:
+                if old is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old
+
+            self.assertEqual(result.status, "ok")
+            self.assertTrue(any(item["path"].lower().endswith("personal/health") for item in result.output["matches"]))
+
     def test_terminal_is_blocked_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             tools = ToolRegistry(ObsidianMemory(Path(tmp)))

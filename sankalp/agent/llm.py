@@ -161,6 +161,57 @@ class LLMAdapter:
             return None
         return self._parse_tool_selection(str(result.get("text") or ""), {tool["name"] for tool in tools})
 
+    def agent_next_action(
+        self,
+        message: str,
+        tools: list[dict[str, Any]],
+        observations: list[dict[str, Any]],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        settings = self._settings_with_options(options or {})
+        provider = settings.get("provider", "local")
+        tool_text = "\n".join(
+            f"- {tool['name']}: {tool['description']} Args: {json.dumps(tool.get('arguments') or {})}"
+            for tool in tools
+        )
+        observation_text = json.dumps(observations[-8:], ensure_ascii=False)[:12000]
+        prompt = (
+            "You are the planning controller for Sankalp. Resolve the user's request by iterating over "
+            "the available local tools when evidence is needed, then answer from the observations.\n"
+            "Return only JSON with one of these shapes:\n"
+            "{\"action\":\"tool\",\"tool\":\"file_find\",\"arguments\":{},\"rationale\":\"short reason\"}\n"
+            "{\"action\":\"answer\",\"answer\":\"final answer to the user\"}\n\n"
+            "Rules:\n"
+            "- Use tools for local files, memory, web research, or computer state instead of guessing.\n"
+            "- Choose one tool call at a time. After each observation, refine the next step.\n"
+            "- For broad local-file requests, start with simple broad filename/folder searches, then list promising folders and refine. "
+            "Do not give up after one noisy or empty search if alternate terms or a container path are obvious.\n"
+            "- Keep tool arguments minimal and literal: for example query=\"insurance\", path=\"~/Desktop\", kind=\"any\".\n"
+            "- Only choose a listed tool. Never invent tools. Do not ask the user to do work that a listed read/search tool can do.\n"
+            "- Answer only when the observations are enough or no useful tool step remains.\n\n"
+            f"Tools:\n{tool_text}\n\n"
+            f"User request:\n{message.strip()[:3000]}\n\n"
+            f"Observations so far:\n{observation_text if observations else '[]'}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            if provider == "local_openai":
+                result = self._local_openai(settings, messages, "")
+            elif provider == "gemini":
+                result = self._gemini(settings, messages, "")
+            elif provider == "codex":
+                result = self._codex(settings, messages, "")
+            elif provider == "openai":
+                api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return None
+                result = self._openai(api_key, settings, messages, "", None)
+            else:
+                return None
+        except Exception:
+            return None
+        return self._parse_agent_action(str(result.get("text") or ""), {tool["name"] for tool in tools})
+
     def title_for_query(self, query: str, options: dict[str, Any] | None = None) -> str:
         settings = load_settings(include_secrets=True)
         fallback = title_from_query(query)
@@ -1021,6 +1072,35 @@ class LLMAdapter:
         if not isinstance(arguments, dict):
             arguments = {}
         return {"tool": tool, "arguments": arguments}
+
+    def _parse_agent_action(self, value: str, allowed: set[str]) -> dict[str, Any] | None:
+        text = value.strip()
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start:end + 1]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        action = str(data.get("action") or "").strip().lower()
+        if action == "answer":
+            answer = str(data.get("answer") or "").strip()
+            return {"action": "answer", "answer": answer} if answer else None
+        if action != "tool":
+            return None
+        tool = str(data.get("tool") or "").strip()
+        if not tool or tool not in allowed:
+            return None
+        arguments = data.get("arguments")
+        if not isinstance(arguments, dict):
+            arguments = {}
+        rationale = str(data.get("rationale") or "").strip()
+        return {"action": "tool", "tool": tool, "arguments": arguments, "rationale": rationale}
 
     def _parse_memory_search_query(self, value: str) -> str | None:
         text = value.strip()

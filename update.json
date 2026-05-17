@@ -1,9 +1,9 @@
 {
-  "version": "0.1.14",
+  "version": "0.1.15",
   "channel": "stable",
-  "title": "CLI provider discovery",
+  "title": "Multi-turn agentic tool use",
   "notes": [
-    "improve Codex CLI discovery by expanding PATH and adding custom path configuration, and rename memory settings UI labels"
+    "improve Sankalp's ability to use tools multiple times to answer questions more accurately"
   ],
   "minimum_supported_version": "0.1.0"
 }

@@ -60,6 +60,11 @@ scroll regions while the header, settings entry point, and composer stay fixed i
 
 ## Runtime Flows
 
+- Runtime ports: installed app mode serves the built WebUI and `/api/*` from
+  `http://127.0.0.1:8765`; dev mode keeps the Python backend on
+  `http://127.0.0.1:8766` and the Vite WebUI on `http://127.0.0.1:5173`.
+  `scripts/relaunch_dev.sh` exports `SANKALP_DEV_API_TARGET` so the Vite proxy points at the dev
+  backend instead of the installed app.
 - Chat flow: WebUI -> `/api/chat/stream` -> agent/tool/provider pipeline -> SSE events (`status`,
   `reasoning`, `delta`, `session`, `done`) -> session + tool log persistence. `Settings -> Provider`
   stores the default provider/model used by Telegram and newly created WebUI chats; the composer can
@@ -67,17 +72,21 @@ scroll regions while the header, settings entry point, and composer stay fixed i
 - OpenAI-compatible streaming forwards chat-completion content deltas when available and falls back
 to a non-streaming completion if the upstream stream closes without visible text, preventing blank
 assistant turns from providers with unusual streaming/reasoning output.
-- Tool routing: deterministic command/intent routing first; safe read/search fallback via LLM tool
-  selection; write/terminal actions stay explicit.
+- Tool routing: slash commands and safety-sensitive writes stay explicit, while natural-language
+  requests go through an iterative planner loop. The planner sees recent messages and recent tool
+  results, chooses one safe read/search/list tool at a time, observes the result, refines the next
+  step, and then answers from evidence.
 - Computer Use flow: `/computer ...` commands call the macOS harness for app listing, screenshots,
 accessibility-tree inspection, and explicit click/type/key actions. `/computer task ...` runs a
 bounded experimental loop that observes, asks the selected model for one structured action, checks
 policy, executes through the tool registry, and repeats until done/blocked/confirmed.
 - Memory flow: `/remember` and natural save intents write to Obsidian with routing/fallback logic;
   explicit memory-find intents route through `memory_search` first.
-- File flow: `/ls [path]`, `/find <name>`, and natural file/folder requests call `file_list` or
-  `file_find` before model routing; ambiguous requests can still be selected through the LLM tool
-  router. File tools remain limited to configured allowed roots.
+- File flow: `/ls [path]` and `/find <name>` remain direct commands. Natural file/folder requests
+  use the iterative planner loop so the model can search broadly, list promising folders, read
+  follow-up files, and resolve references such as "it" or "that folder" from recent tool results.
+  Path resolution remains limited to configured allowed roots and is tolerant of case differences in
+  existing path segments.
 - Telegram gateway flow: Telegram long polling -> allowlist check -> per-chat session lookup under
   `~/.sankalp/gateway/telegram.json` -> `Agent.turn` -> chunked Telegram replies.
 - Title flow: immediate fallback title, then async global smallest-model title generation

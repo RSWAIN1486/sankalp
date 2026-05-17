@@ -374,10 +374,7 @@ class ToolRegistry:
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             candidate = self.roots[0] / candidate
-        try:
-            resolved = candidate.resolve()
-        except FileNotFoundError:
-            resolved = candidate.parent.resolve() / candidate.name
+        resolved = self._resolve_existing_case(candidate)
         for root in self.roots:
             try:
                 resolved.relative_to(root)
@@ -385,6 +382,38 @@ class ToolRegistry:
             except ValueError:
                 continue
         return None
+
+    def _resolve_existing_case(self, candidate: Path) -> Path:
+        if candidate.exists():
+            return candidate.resolve()
+        if not candidate.is_absolute():
+            try:
+                return candidate.resolve()
+            except FileNotFoundError:
+                return candidate.parent.resolve() / candidate.name
+
+        parts = candidate.parts
+        if not parts:
+            return candidate
+        current = Path(parts[0])
+        for part in parts[1:]:
+            next_path = current / part
+            if next_path.exists():
+                current = next_path
+                continue
+            if current.exists() and current.is_dir():
+                try:
+                    match = next((child for child in current.iterdir() if child.name.lower() == part.lower()), None)
+                except OSError:
+                    match = None
+                if match is not None:
+                    current = match
+                    continue
+            current = next_path
+        try:
+            return current.resolve()
+        except FileNotFoundError:
+            return current.parent.resolve() / current.name
 
     def _find_roots(self, path: str = "") -> list[Path]:
         self._refresh_roots()

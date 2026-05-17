@@ -11,7 +11,7 @@ Run the Sankalp backend first:
 
 ```sh
 cd /Users/rswai/sankalp
-python3 server.py
+SANKALP_PORT=8766 python3 server.py
 ```
 
 Then run the WebUI dev server:
@@ -21,7 +21,7 @@ cd /Users/rswai/sankalp/web
 source ~/.nvm/nvm.sh
 nvm use
 npm install
-npm run dev -- --port 5173
+SANKALP_DEV_API_TARGET=http://127.0.0.1:8766 npm run dev -- --port 5173
 ```
 
 If `npm run dev` says Vite requires a newer Node version, your shell is not using the
@@ -32,7 +32,8 @@ source ~/.nvm/nvm.sh
 nvm use
 ```
 
-The Vite dev server proxies `/api/*` to `http://127.0.0.1:8765`.
+The Vite dev server proxies `/api/*` to `http://127.0.0.1:8766` by default. Override it with
+`SANKALP_DEV_API_TARGET` when the backend runs elsewhere.
 Open `http://127.0.0.1:5173`.
 
 ## Installed App Build

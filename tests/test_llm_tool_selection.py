@@ -34,6 +34,20 @@ class LLMToolSelectionTests(unittest.TestCase):
         self.assertEqual(result["tool"], "file_read")
         self.assertEqual(result["arguments"]["path"], "README.md")
 
+    def test_parse_agent_action_accepts_tool_and_answer(self):
+        tool = LLMAdapter()._parse_agent_action(
+            '{"action":"tool","tool":"file_find","arguments":{"query":"insurance","path":"~/Desktop"}}',
+            {"file_find"},
+        )
+        answer = LLMAdapter()._parse_agent_action(
+            '```json\n{"action":"answer","answer":"Found the folder."}\n```',
+            {"file_find"},
+        )
+
+        self.assertEqual(tool["tool"], "file_find")
+        self.assertEqual(tool["arguments"]["query"], "insurance")
+        self.assertEqual(answer["answer"], "Found the folder.")
+
     def test_parse_memory_search_query_accepts_json(self):
         result = LLMAdapter()._parse_memory_search_query(
             '```json\n{"query":"stripe fraud detection radar algorithm"}\n```'

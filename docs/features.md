@@ -42,10 +42,11 @@ This file is the minimal, user-facing feature map for the current product.
 ## Tools and Research
 
 - Core tools include memory, web fetch/search, file list/read/append, and optional terminal.
-- `/ls [path]` lists visible files and folders under configured local roots; simple file/folder
-  questions route to this tool before calling a model. Ambiguous tool requests can also be routed by
-  the LLM tool selector using the advertised tool catalog.
+- `/ls [path]` lists visible files and folders under configured local roots.
 - `/find <name>` recursively finds files or folders by name across configured local roots.
+- Natural file/folder prompts run through the iterative planner loop: Sankalp can search broadly,
+  inspect promising folders, read follow-up files, and answer later references such as "what is in
+  it?" from recent tool results.
 - Allowed local roots can be saved in `Settings -> Memory`; `SANKALP_ALLOWED_ROOTS` remains an env
   override for advanced launches.
 - Tool calls are logged in session activity for auditability.
@@ -64,6 +65,8 @@ This file is the minimal, user-facing feature map for the current product.
 ## Daemon and Messaging Gateway
 
 - Foreground daemon entry point with `python3 -m sankalp.daemon`.
+- Dev relaunch keeps dev and installed app ports separate: backend `8766`, WebUI `5173`, installed
+  app `8765`.
 - Optional Telegram gateway configured in `Settings -> Gateway`.
 - Telegram access is allowlisted by default through saved allowed user IDs.
 - Per-chat Telegram sessions persist under `~/.sankalp/gateway/telegram.json`.

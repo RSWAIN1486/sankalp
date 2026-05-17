@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shlex
 import threading
@@ -46,7 +47,7 @@ class Agent:
         if routed is not None:
             answer = routed
         else:
-            selected = self._run_web_research(session, content, options) if self._is_web_research_request(content.lower()) else self._route_llm_selected_tool(session, content, options)
+            selected = self._run_web_research(session, content, options) if self._is_web_research_request(content.lower()) else self._run_agentic_tool_loop(session, content, options)
             if selected is not None:
                 answer = selected
             else:
@@ -99,7 +100,7 @@ class Agent:
             yield {"event": "status", "data": {"label": "Done", "detail": "Handled by built-in tool"}}
             yield {"event": "delta", "data": {"text": answer}}
         else:
-            selected = self._run_web_research(session, content, options) if self._is_web_research_request(content.lower()) else self._route_llm_selected_tool(session, content, options)
+            selected = self._run_web_research(session, content, options) if self._is_web_research_request(content.lower()) else self._run_agentic_tool_loop(session, content, options)
             if selected is not None:
                 answer = selected
                 if auto_save_after_answer and answer and not answer.startswith("I hit an LLM adapter error:"):
@@ -234,12 +235,6 @@ class Agent:
             query = content.split(maxsplit=1)[1].strip() if len(content.split(maxsplit=1)) > 1 else ""
             kind = "directory" if lowered.startswith("/find-folder ") else "file" if lowered.startswith("/find-file ") else "any"
             return self._route_file_find(session, query, kind=kind)
-
-        if self._is_file_list_request(lowered):
-            return self._route_file_list(session, self._file_list_path_from_request(content))
-
-        if self._is_file_find_request(lowered):
-            return self._route_file_find(session, self._file_find_query_from_request(content))
 
         if lowered.startswith("/append "):
             body = content[len("/append "):]
@@ -659,6 +654,86 @@ class Agent:
         selection = self.llm.select_tool(content, self._llm_selectable_tools(), options)
         if not selection:
             return None
+        result = self._execute_selected_tool(session, selection, content, options)
+        if result is None:
+            return None
+        return self._answer_for_one_shot_tool_result(content, result, options)
+
+    def _run_agentic_tool_loop(self, session: Session, content: str, options: dict[str, Any]) -> str | None:
+        if not hasattr(self.llm, "agent_next_action"):
+            return self._route_llm_selected_tool(session, content, options)
+
+        tools = self._llm_selectable_tools()
+        request_context = self._agentic_request_context(session, content)
+        observations: list[dict[str, Any]] = []
+        for _ in range(6):
+            action = self.llm.agent_next_action(request_context, tools, observations, options)
+            if not action:
+                return self._route_llm_selected_tool(session, content, options) if not observations else self._fallback_tool_loop_answer(content, observations)
+
+            if action.get("action") == "answer":
+                answer = str(action.get("answer") or "").strip()
+                if not observations:
+                    return None
+                return answer or None
+
+            if action.get("action") != "tool":
+                return None
+
+            result = self._execute_selected_tool(session, action, content, options)
+            if result is None:
+                observations.append({
+                    "tool": action.get("tool"),
+                    "arguments": action.get("arguments") or {},
+                    "status": "error",
+                    "output": {"error": "tool call was invalid or unavailable"},
+                })
+                continue
+            observations.append(self._compact_tool_observation(result))
+
+        return self._fallback_tool_loop_answer(content, observations)
+
+    def _agentic_request_context(self, session: Session, content: str) -> str:
+        prior_messages = session.messages[:-1][-6:]
+        prior_tools = session.tool_calls[-8:]
+        context: dict[str, Any] = {
+            "current_user_request": content,
+            "recent_messages": prior_messages,
+            "recent_tool_calls": [self._compact_prior_tool_call(call) for call in prior_tools],
+        }
+        return (
+            "Use this conversation context to resolve references like it, that folder, the file, or the previous result.\n"
+            + json.dumps(context, ensure_ascii=False)[:12000]
+        )
+
+    def _compact_prior_tool_call(self, call: dict[str, Any]) -> dict[str, Any]:
+        output = call.get("output") or {}
+        if call.get("name") == "file_find":
+            output = {
+                "matches": (output.get("matches") or [])[:20],
+                "searched_roots": output.get("searched_roots") or [],
+                "truncated": output.get("truncated"),
+            }
+        elif call.get("name") == "file_list":
+            output = {
+                "path": output.get("path"),
+                "entries": (output.get("entries") or [])[:40],
+                "truncated": output.get("truncated"),
+            }
+        elif call.get("name") == "file_read":
+            output = {
+                "path": output.get("path"),
+                "text": str(output.get("text") or "")[:1200],
+                "error": output.get("error"),
+            }
+        return {
+            "name": call.get("name"),
+            "status": call.get("status"),
+            "input": call.get("input") or {},
+            "output": output,
+        }
+
+    def _execute_selected_tool(self, session: Session, selection: dict[str, Any], content: str, options: dict[str, Any]) -> Any | None:
         tool = selection.get("tool")
         arguments = dict(selection.get("arguments") or {})
         if tool == "memory_search":
@@ -666,64 +741,140 @@ class Agent:
             search_query = self._memory_search_query(selected_query, options)
             result = self.tools.call("memory_search", query=search_query, original_query=content, limit=6)
             session.tool_calls.append(asdict(result))
-            if result.status != "ok":
-                return f"I could not search memory: {result.output}"
-            return self._answer_memory_search(session, content, result.output, options)
+            return result
         if tool == "browser_fetch":
             url = str(arguments.get("url") or "").strip()
             if not url:
                 return None
             result = self.tools.call("browser_fetch", url=url)
             session.tool_calls.append(asdict(result))
-            if result.status == "ok":
-                text = result.output.get("text", "")
-                return f"Fetched `{url}`.\n\n{text[:2500]}"
-            return f"Fetch failed: {result.output}"
+            return result
         if tool == "browser_search":
             query = str(arguments.get("query") or content).strip()
             limit = int(arguments.get("limit") or 6)
             result = self.tools.call("browser_search", query=query, limit=limit, include_content=True)
             session.tool_calls.append(asdict(result))
-            if result.status != "ok":
-                return f"Research failed: {result.output}"
-            return self._answer_web_research(query, result.output, options)
+            return result
         if tool == "file_read":
             path = str(arguments.get("path") or "").strip()
             if not path:
                 return None
             result = self.tools.call("file_read", path=path)
             session.tool_calls.append(asdict(result))
-            if result.status == "ok":
-                return f"Read `{result.output['path']}`.\n\n{result.output['text']}"
-            return f"Read failed: {result.output}"
+            return result
         if tool == "file_list":
             path = str(arguments.get("path") or ".").strip() or "."
-            return self._route_file_list(session, path)
+            result = self.tools.call("file_list", path=path, limit=int(arguments.get("limit") or 80))
+            session.tool_calls.append(asdict(result))
+            return result
         if tool == "file_find":
             query = str(arguments.get("query") or arguments.get("name") or "").strip()
             if not query:
                 return None
             path = str(arguments.get("path") or "").strip()
             kind = str(arguments.get("kind") or "any").strip().lower()
-            return self._route_file_find(session, query, path=path, kind=kind)
+            result = self.tools.call("file_find", query=query, path=path, kind=kind, limit=int(arguments.get("limit") or 80), max_depth=int(arguments.get("max_depth") or 10))
+            session.tool_calls.append(asdict(result))
+            return result
         if tool == "computer_status":
             result = self.tools.call("computer_status")
             session.tool_calls.append(asdict(result))
-            return self._format_computer_status(result.output)
+            return result
         if tool == "computer_list_apps":
             result = self.tools.call("computer_list_apps")
             session.tool_calls.append(asdict(result))
-            return self._format_computer_apps(result)
+            return result
         if tool == "computer_inspect":
             app = str(arguments.get("app") or "").strip()
             if not app:
                 return None
             result = self.tools.call("computer_inspect", app=app, max_depth=3, max_children=60)
             session.tool_calls.append(asdict(result))
-            if result.status == "ok":
-                return f"Inspected `{app}`.\n\n```plaintext\n{result.output.get('tree', '').strip()}\n```"
-            return f"Inspect failed: {result.output}"
+            return result
         return None
+
+    def _answer_for_one_shot_tool_result(self, content: str, result: Any, options: dict[str, Any]) -> str:
+        if result.name == "memory_search":
+            if result.status != "ok":
+                return f"I could not search memory: {result.output}"
+            return self._answer_memory_search(None, content, result.output, options)
+        if result.name == "browser_fetch":
+            if result.status == "ok":
+                text = result.output.get("text", "")
+                return f"Fetched `{result.input.get('url')}`.\n\n{text[:2500]}"
+            return f"Fetch failed: {result.output}"
+        if result.name == "browser_search":
+            if result.status != "ok":
+                return f"Research failed: {result.output}"
+            return self._answer_web_research(str(result.input.get("query") or content), result.output, options)
+        if result.name == "file_read":
+            if result.status == "ok":
+                return f"Read `{result.output['path']}`.\n\n{result.output['text']}"
+            return f"Read failed: {result.output}"
+        if result.name == "file_list":
+            if result.status != "ok":
+                return f"List failed: {result.output}"
+            return self._format_file_list(result.output)
+        if result.name == "file_find":
+            if result.status != "ok":
+                return f"Find failed: {result.output}"
+            return self._format_file_find(str(result.input.get("query") or ""), result.output)
+        if result.name == "computer_status":
+            return self._format_computer_status(result.output)
+        if result.name == "computer_list_apps":
+            return self._format_computer_apps(result)
+        if result.name == "computer_inspect":
+            if result.status == "ok":
+                return f"Inspected `{result.input.get('app')}`.\n\n```plaintext\n{result.output.get('tree', '').strip()}\n```"
+            return f"Inspect failed: {result.output}"
+        return str(result.output)
+
+    def _compact_tool_observation(self, result: Any) -> dict[str, Any]:
+        output = result.output
+        if result.name == "file_find":
+            output = {
+                "matches": (result.output.get("matches") or [])[:30],
+                "searched_roots": result.output.get("searched_roots") or [],
+                "truncated": result.output.get("truncated"),
+                "visited": result.output.get("visited"),
+            }
+        elif result.name == "file_list":
+            output = {
+                "path": result.output.get("path"),
+                "entries": (result.output.get("entries") or [])[:80],
+                "truncated": result.output.get("truncated"),
+                "allowed_roots": result.output.get("allowed_roots") or [],
+            }
+        elif result.name == "file_read":
+            output = {
+                "path": result.output.get("path"),
+                "text": str(result.output.get("text") or "")[:3000],
+                "error": result.output.get("error"),
+            }
+        elif result.name == "browser_search":
+            output = {
+                "results": (result.output.get("results") or [])[:6],
+                "error": result.output.get("error"),
+            }
+        return {
+            "tool": result.name,
+            "arguments": result.input,
+            "status": result.status,
+            "output": output,
+        }
+
+    def _fallback_tool_loop_answer(self, content: str, observations: list[dict[str, Any]]) -> str | None:
+        if not observations:
+            return None
+        latest = observations[-1]
+        if latest.get("tool") == "file_find" and latest.get("status") == "ok":
+            return self._format_file_find(str((latest.get("arguments") or {}).get("query") or ""), latest.get("output") or {})
+        if latest.get("tool") == "file_list" and latest.get("status") == "ok":
+            return self._format_file_list(latest.get("output") or {})
+        if latest.get("tool") == "file_read" and latest.get("status") == "ok":
+            output = latest.get("output") or {}
+            return f"Read `{output.get('path')}`.\n\n{str(output.get('text') or '')[:3000]}"
+        return f"I tried to use local tools for `{content}`, but could not produce a final answer. Last observation: `{latest}`"
 
     def _llm_selectable_tools(self) -> list[dict[str, Any]]:
         return [
@@ -749,12 +900,12 @@ class Agent:
             },
             {
                 "name": "file_list",
-                "description": "List files and folders in a local directory inside an allowed root.",
+                "description": "List files and folders in a local directory inside an allowed root. Use after finding a promising folder to inspect its contents.",
                 "arguments": {"path": "directory path inside an allowed root, or . for the default root"},
             },
             {
                 "name": "file_find",
-                "description": "Recursively find files or folders by name across allowed local roots.",
+                "description": "Recursively find files or folders by name across allowed local roots. Use broad literal name fragments such as insurance, invoice, health, passport, or pdf; optionally constrain path to ~/Desktop, ~/Documents, or a matched folder.",
                 "arguments": {"query": "file or folder name fragment to find", "kind": "any, file, or directory", "path": "optional allowed root/subfolder"},
             },
             {
@@ -851,13 +1002,96 @@ class Agent:
         path = match.group(1).strip().strip("`\"'")
         return path.strip() or "."
 
+    def _file_find_params_from_request(self, content: str) -> dict[str, str]:
+        return {
+            "query": self._file_find_query_from_request(content),
+            "path": self._file_find_path_from_request(content),
+            "kind": self._file_find_kind_from_request(content),
+        }
+
+    def _file_find_kind_from_request(self, content: str) -> str:
+        lower = content.lower()
+        action_tail = re.split(r"\b(?:find|locate|search for|look for)\b", lower, maxsplit=1)
+        target_text = action_tail[1] if len(action_tail) > 1 else lower
+        if re.search(r"\b(folders?|directories)\b", target_text):
+            return "directory"
+        if re.search(r"\bfiles?\b", target_text):
+            return "file"
+        return "any"
+
+    def _file_find_path_from_request(self, content: str) -> str:
+        explicit = re.search(r"\b(?:in|under|inside)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|/[^\n?]+|~[^\n?]+)", content, flags=re.I)
+        if explicit:
+            return explicit.group(1).strip().strip("`\"'").strip()
+
+        prefix = re.split(r"\b(?:and\s+)?(?:find|locate|search for|look for)\b", content, maxsplit=1, flags=re.I)[0]
+        location_pattern = r"(desktop|documents|downloads)"
+        folder_name = None
+        location = None
+        patterns = [
+            fr"\b(?:my|the)?\s*([A-Za-z0-9_. -]+?)\s+(?:folder|directory)\s+(?:under|inside|in)\s+(?:my|the)?\s*{location_pattern}\b",
+            fr"\b(?:folder|directory)\s+(?:named|called|name)\s+([A-Za-z0-9_. -]+?)\s+(?:under|inside|in)\s+(?:my|the)?\s*{location_pattern}\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, prefix, flags=re.I)
+            if match:
+                folder_name = self._clean_container_phrase(match.group(1))
+                location = match.group(2).lower()
+                break
+        if not folder_name or not location:
+            return ""
+        aliases = {
+            "desktop": "~/Desktop",
+            "documents": "~/Documents",
+            "downloads": "~/Downloads",
+        }
+        return f"{aliases[location]}/{folder_name}"
+
     def _file_find_query_from_request(self, content: str) -> str:
-        match = re.search(r"\b(?:named|called|matching|for)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|[A-Za-z0-9_. -]+)", content, flags=re.I)
+        action_match = re.search(
+            r"\b(?:find|locate|search for|look for)\s+(?:any\s+|a\s+|an\s+|the\s+)?"
+            r"(?:files?|folders?|directories)?\s*(?:named|called|name)\s+"
+            r"(`[^`]+`|\"[^\"]+\"|'[^']+'|[A-Za-z0-9_. -]+?)"
+            r"(?=\s+(?:in|under|inside|within|beneath)\b|\?|\.|$)",
+            content,
+            flags=re.I,
+        )
+        if action_match:
+            return self._clean_file_phrase(action_match.group(1))
+
+        action_match = re.search(
+            r"\b(?:find|locate|search for|look for)\s+(?:any\s+|a\s+|an\s+|the\s+)?"
+            r"(`[^`]+`|\"[^\"]+\"|'[^']+'|[A-Za-z0-9_. -]+?)\s+"
+            r"(?:files?|folders?|directories)\b",
+            content,
+            flags=re.I,
+        )
+        if action_match:
+            return self._clean_file_phrase(action_match.group(1))
+
+        match = re.search(
+            r"\b(?:named|called|matching|for)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|[A-Za-z0-9_. -]+?)"
+            r"(?=\s+(?:in|under|inside|within|beneath)\b|\?|\.|$)",
+            content,
+            flags=re.I,
+        )
         if match:
-            return match.group(1).strip().strip("`\"' .?")
+            return self._clean_file_phrase(match.group(1))
         cleaned = re.sub(r"\b(can you|could you|please|pls|find|locate|search for|look for|recursively|recursive|files?|folders?|directories|on my system|across|allowed roots|root folders)\b", " ", content, flags=re.I)
         cleaned = re.sub(r"\b(in|under|inside)\s+(`[^`]+`|\"[^\"]+\"|'[^']+'|/[^\n?]+|~[^\n?]+)", " ", cleaned, flags=re.I)
         return " ".join(cleaned.strip(" ?").split())
+
+    def _clean_file_phrase(self, phrase: str) -> str:
+        cleaned = phrase.strip().strip("`\"' .?")
+        cleaned = re.sub(r"^(?:my|the|a|an)\s+", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned
+
+    def _clean_container_phrase(self, phrase: str) -> str:
+        cleaned = self._clean_file_phrase(phrase)
+        cleaned = re.sub(r"^.*\b(?:check|inspect|open|use)\s+(?:my|the|a|an)?\s*", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"^(?:recursively|recursive)\s+", "", cleaned, flags=re.I)
+        return self._clean_file_phrase(cleaned)
 
     def _format_browser_search(self, query: str, output: dict[str, Any]) -> str:
         results = output.get("results") or []

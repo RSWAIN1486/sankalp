@@ -39,24 +39,14 @@ irm https://raw.githubusercontent.com/RSWAIN1486/sankalp/main/scripts/install_wi
 ```sh
 git clone https://github.com/RSWAIN1486/sankalp.git
 cd sankalp
-python3 server.py
-```
-
-In another terminal:
-
-```sh
-cd web
-source ~/.nvm/nvm.sh
-nvm install 24
-nvm use 24
-npm install
-npm run dev
+scripts/relaunch_dev.sh
 ```
 
 ## Open Sankalp
 
 - Installed app mode: `http://127.0.0.1:8765`
-- WebUI dev mode: `http://127.0.0.1:5173`
+- Dev backend: `http://127.0.0.1:8766`
+- Dev WebUI: `http://127.0.0.1:5173`
 
 ## Telegram Gateway
 

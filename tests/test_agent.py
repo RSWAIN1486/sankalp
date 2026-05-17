@@ -373,8 +373,17 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(result["tool_calls"], [])
             self.assertIn("latest=hello there", result["message"]["content"])
 
-    def test_natural_file_list_request_routes_without_llm(self):
-        class BrokenLLM:
+    def test_natural_file_list_request_uses_agentic_tool_loop(self):
+        class PlannerLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def agent_next_action(self, message, tools, observations, options=None):
+                self.calls += 1
+                if not observations:
+                    return {"action": "tool", "tool": "file_list", "arguments": {"path": "."}}
+                return {"action": "answer", "answer": "I found Projects and notes.md."}
+
             def complete(self, *args, **kwargs):
                 raise RuntimeError("model should not be called")
 
@@ -390,7 +399,7 @@ class AgentTests(unittest.TestCase):
             try:
                 memory = ObsidianMemory(root / "vault")
                 tools = ToolRegistry(memory)
-                agent = Agent(SessionStore(root / "sessions"), memory, tools, BrokenLLM())
+                agent = Agent(SessionStore(root / "sessions"), memory, tools, PlannerLLM())
                 result = agent.turn(None, "What folders do you see on my system?")
             finally:
                 if old is None:
@@ -400,7 +409,6 @@ class AgentTests(unittest.TestCase):
 
             self.assertEqual(result["tool_calls"][0]["name"], "file_list")
             self.assertIn("Projects", result["message"]["content"])
-            self.assertIn("Allowed roots", result["message"]["content"])
 
     def test_ls_command_lists_requested_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -445,6 +453,148 @@ class AgentTests(unittest.TestCase):
 
             self.assertEqual(result["tool_calls"][0]["name"], "file_find")
             self.assertIn("roadmap.md", result["message"]["content"])
+
+    def test_natural_file_find_uses_target_and_container_path(self):
+        class PlannerLLM(FakeLLM):
+            def agent_next_action(self, message, tools, observations, options=None):
+                if not observations:
+                    return {
+                        "action": "tool",
+                        "tool": "file_find",
+                        "arguments": {"query": "health", "path": "~/Desktop/Personal", "kind": "directory"},
+                    }
+                return {"action": "answer", "answer": "Found `/personal/health`."}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_roots = os.environ.get("SANKALP_ALLOWED_ROOTS")
+            old_home = os.environ.get("HOME")
+            home = Path(tmp) / "home"
+            desktop = home / "Desktop"
+            personal = desktop / "Personal"
+            (personal / "health").mkdir(parents=True)
+            (personal / "health" / "test_report.pdf").write_text("pdf", encoding="utf-8")
+            os.environ["HOME"] = str(home)
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(desktop)
+            try:
+                memory = ObsidianMemory(Path(tmp) / "vault")
+                tools = ToolRegistry(memory)
+                agent = Agent(SessionStore(Path(tmp) / "sessions"), memory, tools, PlannerLLM())
+                result = agent.turn(None, "can you recursively check my personal folder under desktop and find any health folder under that?")
+            finally:
+                if old_roots is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old_roots
+                if old_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = old_home
+
+            self.assertEqual(result["tool_calls"][0]["name"], "file_find")
+            self.assertEqual(result["tool_calls"][0]["input"]["query"], "health")
+            self.assertEqual(result["tool_calls"][0]["input"]["kind"], "directory")
+            self.assertIn("/personal/health", result["message"]["content"].lower())
+
+    def test_agentic_loop_can_refine_insurance_document_search(self):
+        class PlannerLLM(FakeLLM):
+            def agent_next_action(self, message, tools, observations, options=None):
+                if not observations:
+                    return {"action": "tool", "tool": "file_find", "arguments": {"query": "insurance", "path": "~/Desktop", "kind": "any"}}
+                if len(observations) == 1:
+                    matches = observations[0]["output"]["matches"]
+                    folder = next(item["path"] for item in matches if item["path"].endswith("insurance_dad_mom"))
+                    return {"action": "tool", "tool": "file_list", "arguments": {"path": folder}}
+                return {
+                    "action": "answer",
+                    "answer": "Found insurance docs in `Desktop/Personal/health/insurance_dad_mom`, including `care_supreme_1Cr_both.jpeg`.",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_roots = os.environ.get("SANKALP_ALLOWED_ROOTS")
+            old_home = os.environ.get("HOME")
+            home = Path(tmp) / "home"
+            insurance = home / "Desktop" / "Personal" / "health" / "insurance_dad_mom"
+            insurance.mkdir(parents=True)
+            (insurance / "care_supreme_1Cr_both.jpeg").write_text("image", encoding="utf-8")
+            vehicle = home / "Desktop" / "Personal" / "Documents" / "Vehicle"
+            vehicle.mkdir(parents=True)
+            (vehicle / "Himalayan_Insurance_24-25.pdf").write_text("pdf", encoding="utf-8")
+            os.environ["HOME"] = str(home)
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(home / "Desktop")
+            try:
+                memory = ObsidianMemory(Path(tmp) / "vault")
+                tools = ToolRegistry(memory)
+                agent = Agent(SessionStore(Path(tmp) / "sessions"), memory, tools, PlannerLLM())
+                result = agent.turn(None, "can you find some insurance related documents under some folder in my Desktop?")
+            finally:
+                if old_roots is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old_roots
+                if old_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = old_home
+
+            self.assertEqual([call["name"] for call in result["tool_calls"]], ["file_find", "file_list"])
+            self.assertIn("insurance_dad_mom", result["message"]["content"])
+            self.assertIn("care_supreme_1Cr_both.jpeg", result["message"]["content"])
+
+    def test_agentic_followup_can_inspect_previous_folder(self):
+        class PlannerLLM(FakeLLM):
+            def agent_next_action(self, message, tools, observations, options=None):
+                if "what is in it" in message.lower() and not observations:
+                    if "insurance_dad_mom" not in message:
+                        raise AssertionError("previous folder path was not included in agent context")
+                    return {
+                        "action": "tool",
+                        "tool": "file_list",
+                        "arguments": {"path": "~/Desktop/Personal/health/insurance_dad_mom"},
+                    }
+                if observations:
+                    return {
+                        "action": "answer",
+                        "answer": "It contains `care_supreme_1Cr_both.jpeg` and `hdfc_optima_secure_50L_both.jpeg`.",
+                    }
+                return {
+                    "action": "answer",
+                    "answer": "Found `/Users/test/Desktop/Personal/health/insurance_dad_mom`.",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_roots = os.environ.get("SANKALP_ALLOWED_ROOTS")
+            old_home = os.environ.get("HOME")
+            home = Path(tmp) / "home"
+            folder = home / "Desktop" / "Personal" / "health" / "insurance_dad_mom"
+            folder.mkdir(parents=True)
+            (folder / "care_supreme_1Cr_both.jpeg").write_text("image", encoding="utf-8")
+            (folder / "hdfc_optima_secure_50L_both.jpeg").write_text("image", encoding="utf-8")
+            os.environ["HOME"] = str(home)
+            os.environ["SANKALP_ALLOWED_ROOTS"] = str(home / "Desktop")
+            try:
+                memory = ObsidianMemory(Path(tmp) / "vault")
+                tools = ToolRegistry(memory)
+                store = SessionStore(Path(tmp) / "sessions")
+                agent = Agent(store, memory, tools, PlannerLLM())
+                session = store.create()
+                session.messages.append({
+                    "role": "assistant",
+                    "content": "Found `/Users/test/Desktop/Personal/health/insurance_dad_mom`.",
+                })
+                store.save(session)
+                result = agent.turn(session.session_id, "what is in it?")
+            finally:
+                if old_roots is None:
+                    os.environ.pop("SANKALP_ALLOWED_ROOTS", None)
+                else:
+                    os.environ["SANKALP_ALLOWED_ROOTS"] = old_roots
+                if old_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = old_home
+
+            self.assertEqual(result["tool_calls"][-1]["name"], "file_list")
+            self.assertIn("care_supreme_1Cr_both.jpeg", result["message"]["content"])
 
     def test_turn_passes_attachments_and_options_to_llm(self):
         class CaptureLLM:

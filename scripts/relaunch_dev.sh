@@ -2,10 +2,11 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
-BACKEND_HOST="${SANKALP_HOST:-127.0.0.1}"
-BACKEND_PORT="${SANKALP_PORT:-8765}"
+BACKEND_HOST="${SANKALP_DEV_HOST:-${SANKALP_HOST:-127.0.0.1}}"
+BACKEND_PORT="${SANKALP_DEV_PORT:-8766}"
 FRONTEND_HOST="${SANKALP_WEB_HOST:-127.0.0.1}"
 FRONTEND_PORT="${SANKALP_WEB_PORT:-5173}"
+FRONTEND_API_TARGET="${SANKALP_DEV_API_TARGET:-http://$BACKEND_HOST:$BACKEND_PORT}"
 LOG_DIR="${SANKALP_DEV_LOG_DIR:-$ROOT_DIR/.dev-logs}"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
@@ -157,7 +158,7 @@ start_frontend() {
       if [ ! -x ./node_modules/.bin/vite ]; then
         npm install --no-fund --no-audit
       fi
-      npm run dev -- --port "'"$FRONTEND_PORT"'"
+      SANKALP_DEV_API_TARGET="'"$FRONTEND_API_TARGET"'" npm run dev -- --host "'"$FRONTEND_HOST"'" --port "'"$FRONTEND_PORT"'"
     ' >>"$FRONTEND_LOG" 2>&1 </dev/null &
     echo $! >"$FRONTEND_PID_FILE"
   )
@@ -189,6 +190,7 @@ main() {
   say "Daemon: running"
   say "Backend: http://$BACKEND_HOST:$BACKEND_PORT"
   say "Frontend: http://$FRONTEND_HOST:$FRONTEND_PORT"
+  say "Frontend API proxy: $FRONTEND_API_TARGET"
   say "Logs: $BACKEND_LOG and $FRONTEND_LOG"
   open_frontend
 }
