@@ -1,9 +1,9 @@
 {
-  "version": "0.1.13",
+  "version": "0.1.14",
   "channel": "stable",
-  "title": "File Find Tool",
+  "title": "CLI provider discovery",
   "notes": [
-    "Add file_find tool for recursive file searches and improve CLI provider validation"
+    "improve Codex CLI discovery by expanding PATH and adding custom path configuration, and rename memory settings UI labels"
   ],
   "minimum_supported_version": "0.1.0"
 }

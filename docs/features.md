@@ -70,6 +70,9 @@ This file is the minimal, user-facing feature map for the current product.
 - Gateway commands include `/start`, `/help`, `/whoami`, `/status`, and `/new`.
 - Dev relaunch starts the daemon; macOS install adds a user LaunchAgent with `RunAtLoad` and
   `KeepAlive`.
+- When the Codex CLI provider is selected, Sankalp expands the daemon subprocess PATH with common
+  Homebrew, local npm, and nvm bin folders, and honors `SANKALP_CODEX_BIN`/`CODEX_CLI_PATH` for a
+  pinned CLI path.
 - Installed macOS builds include a minimal menu-bar item showing live/offline state, the local base
   URL with copy action, and actions to open the WebUI or restart the daemon. When the release
   manifest reports a newer build, the menu also shows `Update Sankalp` and starts the same update

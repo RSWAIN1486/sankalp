@@ -157,7 +157,7 @@
   }
 
   async function saveMemory() {
-    status = "Syncing memory...";
+    status = "Saving memory settings...";
     const data = await api<{ settings: Settings; memory_status: MemoryStatus }>("/api/settings", {
       method: "POST",
       body: JSON.stringify({
@@ -173,7 +173,7 @@
     folders = foldersData.folders || [];
     memoryStatus = foldersData.status || memoryStatus;
     await loadFolderChildren(settings.obsidian_workspace_path || "");
-    status = "Synced";
+    status = "Saved";
   }
 
   async function saveGateway() {
@@ -497,7 +497,7 @@
       {/if}
       <p>{memoryStatus.accessible ? "Accessible" : memoryStatus.error || "Memory status not checked."}</p>
       <div class="settings-actions">
-        <button type="button" on:click={saveMemory}>Sync vault</button>
+        <button type="button" on:click={saveMemory}>Save</button>
         {#if needsVaultAccess}<button type="button" on:click={requestVaultAccess}>Grant vault access</button>{/if}
         <button type="button" on:click={() => viewNotes(settings.obsidian_workspace_path || "")}>View all notes</button>
         {#if macosAvailable && !obsidianState.installed}<button type="button" on:click={openObsidianDownload}>Install Obsidian</button>{/if}

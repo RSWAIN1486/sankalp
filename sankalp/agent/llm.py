@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import quote
@@ -631,7 +632,8 @@ class LLMAdapter:
         yield {"type": "response_id", "response_id": response_id, "provider": "local-openai"}
 
     def _codex(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str) -> dict[str, Any]:
-        if not shutil.which("codex"):
+        codex_command, codex_env = self._codex_cli()
+        if not codex_command:
             return {
                 "text": "Codex CLI is selected, but the `codex` command was not found on this daemon's PATH. Install Codex CLI or choose another default provider in Settings -> Provider.",
                 "response_id": None,
@@ -646,7 +648,7 @@ class LLMAdapter:
         )
         with tempfile.NamedTemporaryFile(prefix="sankalp-codex-", suffix=".txt") as output:
             command = [
-                "codex",
+                codex_command,
                 "exec",
                 "--sandbox",
                 "read-only",
@@ -666,7 +668,7 @@ class LLMAdapter:
             if effort and effort != "none":
                 command.extend(["-c", f'model_reasoning_effort="{effort}"'])
             command.append("-")
-            proc = subprocess.run(command, input=prompt, text=True, capture_output=True, timeout=180)
+            proc = subprocess.run(command, input=prompt, text=True, capture_output=True, timeout=180, env=codex_env)
             text = output.read().decode("utf-8", errors="replace").strip()
         if not text:
             stderr_text = self._filter_codex_stderr_text(proc.stderr or "")
@@ -731,7 +733,8 @@ class LLMAdapter:
         yield {"type": "response_id", "response_id": None, "provider": "gemini"}
 
     def _codex_stream(self, settings: dict[str, Any], messages: list[dict[str, str]], memory_context: str):
-        if not shutil.which("codex"):
+        codex_command, codex_env = self._codex_cli()
+        if not codex_command:
             yield {
                 "type": "delta",
                 "text": "Codex CLI is selected, but the `codex` command was not found on this daemon's PATH. Install Codex CLI or choose another default provider in Settings -> Provider.",
@@ -747,7 +750,7 @@ class LLMAdapter:
         )
         with tempfile.NamedTemporaryFile(prefix="sankalp-codex-stream-", suffix=".txt") as output:
             command = [
-                "codex",
+                codex_command,
                 "exec",
                 "--json",
                 "--sandbox",
@@ -775,6 +778,7 @@ class LLMAdapter:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=codex_env,
             )
             emitted = False
             try:
@@ -821,6 +825,45 @@ class LLMAdapter:
                 if proc.poll() is None:
                     proc.kill()
         yield {"type": "response_id", "response_id": None, "provider": "codex"}
+
+    def _codex_cli(self) -> tuple[str | None, dict[str, str]]:
+        env = os.environ.copy()
+        path_dirs = self._codex_path_dirs()
+        env["PATH"] = os.pathsep.join(path_dirs)
+
+        configured = (env.get("SANKALP_CODEX_BIN") or env.get("CODEX_CLI_PATH") or "").strip()
+        if configured:
+            configured_path = Path(configured).expanduser()
+            if configured_path.is_file():
+                parent = str(configured_path.parent)
+                if parent not in path_dirs:
+                    env["PATH"] = os.pathsep.join([parent, *path_dirs])
+                return str(configured_path), env
+
+        return shutil.which("codex", path=env["PATH"]), env
+
+    def _codex_path_dirs(self) -> list[str]:
+        candidates = [
+            *os.environ.get("PATH", "").split(os.pathsep),
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+            str(Path("~/.local/bin").expanduser()),
+            str(Path("~/.npm-global/bin").expanduser()),
+        ]
+        candidates.extend(str(path) for path in sorted(Path("~/.nvm/versions/node").expanduser().glob("*/bin"), reverse=True))
+
+        seen: set[str] = set()
+        path_dirs: list[str] = []
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            path_dirs.append(candidate)
+        return path_dirs
 
     def _extract_codex_delta(self, event: dict[str, Any]) -> str:
         candidates = [
