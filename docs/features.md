@@ -35,7 +35,11 @@ This file is the minimal, user-facing feature map for the current product.
 
 - Obsidian-compatible Markdown vault integration.
 - `/remember` for durable memory capture.
-- Natural-language save/document intents routed to memory capture.
+- Research/document requests save through a model-prepared Obsidian plan containing target folder,
+  note filename, and clean Markdown body, so explicit paths in the request or answer are honored
+  before deterministic fallback routing.
+- Combined prompts like "search/research ... and document ..." run web research first, then save the
+  synthesized note, instead of stopping at an existing memory hit.
 - Explicit memory find/check intents routed to `memory_search` first.
 - Session deletion also removes matching Obsidian session transcript.
 

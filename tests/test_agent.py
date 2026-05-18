@@ -167,6 +167,139 @@ class AgentTests(unittest.TestCase):
             self.assertNotIn("Obsidian Note Draft", saved)
             self.assertFalse((vault / "Inbox" / "latest-jepa-papers.md").exists())
 
+    def test_auto_save_uses_llm_prepared_memory_save_plan(self):
+        class SavePlannerLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {
+                    "text": (
+                        "I found useful source context and drafted the Obsidian note for "
+                        "`ML&Agents/Concepts/Grouped Query Attention vs Multi-Head Latent Attention.md`:\n\n"
+                        "---\n"
+                        "title: Grouped Query Attention vs Multi-Head Latent Attention\n"
+                        "---\n\n"
+                        "# Grouped Query Attention vs Multi-Head Latent Attention\n\n"
+                        "Clean note body."
+                    ),
+                    "response_id": "resp_test",
+                }
+
+            def prepare_memory_save(self, request, answer, folders, existing_notes, options=None):
+                return {
+                    "folder": "ML&Agents/Concepts",
+                    "note": "Grouped Query Attention vs Multi-Head Latent Attention.md",
+                    "content": (
+                        "---\n"
+                        "title: Grouped Query Attention vs Multi-Head Latent Attention\n"
+                        "---\n\n"
+                        "# Grouped Query Attention vs Multi-Head Latent Attention\n\n"
+                        "Clean note body."
+                    ),
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            (vault / "ML&Agents" / "Concepts").mkdir(parents=True)
+            memory = ObsidianMemory(vault)
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), SavePlannerLLM())
+
+            result = agent.turn(None, "Search and document these concepts - Group query attention vs Multi Head latent attention under ML&Agents/Concepts in obsidian")
+
+            self.assertIn(
+                "Saved to Obsidian at `ML&Agents/Concepts/grouped-query-attention-vs-multi-head-latent-attention.md`.",
+                result["message"]["content"],
+            )
+            saved = vault / "ML&Agents" / "Concepts" / "grouped-query-attention-vs-multi-head-latent-attention.md"
+            self.assertTrue(saved.exists())
+            text = saved.read_text(encoding="utf-8")
+            self.assertIn("Clean note body.", text)
+            self.assertNotIn("I found useful source context", text)
+            self.assertFalse((vault / "Inbox" / "grouped-query-attention-vs-multi-head-latent-attention.md").exists())
+
+    def test_prepared_save_plan_normalizes_fuzzy_folder_to_existing_path(self):
+        class SavePlannerLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {
+                    "text": "# Test Concept\n\nClean note body.",
+                    "response_id": "resp_test",
+                }
+
+            def prepare_memory_save(self, request, answer, folders, existing_notes, options=None):
+                return {
+                    "folder": "ML Concepts",
+                    "note": "Test Concept.md",
+                    "content": "# Test Concept\n\nClean note body.",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            (vault / "ML&Agents" / "Concepts").mkdir(parents=True)
+            memory = ObsidianMemory(vault)
+            agent = Agent(SessionStore(root / "sessions"), memory, ToolRegistry(memory), SavePlannerLLM())
+
+            result = agent.turn(None, "Search and document test concept under ML concepts in obsidian")
+
+            self.assertIn("Saved to Obsidian at `ML&Agents/Concepts/test-concept.md`.", result["message"]["content"])
+            self.assertTrue((vault / "ML&Agents" / "Concepts" / "test-concept.md").exists())
+            self.assertFalse((vault / "ML Concepts" / "test-concept.md").exists())
+
+    def test_search_and_document_prefers_web_research_over_memory_lookup(self):
+        class SavePlannerLLM(FakeLLM):
+            def complete(self, messages, memory_context, previous_response_id=None, options=None, attachments=None):
+                return {
+                    "text": "# KV Cache Attention Mechanisms Since 2022\n\nWeb-researched synthesis.",
+                    "response_id": "resp_test",
+                }
+
+            def prepare_memory_save(self, request, answer, folders, existing_notes, options=None):
+                return {
+                    "folder": "ML Concepts",
+                    "note": "KV Cache Attention Mechanisms Since 2022.md",
+                    "content": "# KV Cache Attention Mechanisms Since 2022\n\nWeb-researched synthesis.",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / "vault"
+            (vault / "ML&Agents" / "Concepts").mkdir(parents=True)
+            (vault / "ML&Agents" / "Concepts" / "kv-cache-attention-mechanisms-since-2022.md").write_text(
+                "# Existing Note\n\nOld memory hit.",
+                encoding="utf-8",
+            )
+            memory = ObsidianMemory(vault)
+            tools = ToolRegistry(memory)
+
+            def fake_browser_search(query, limit=5, include_content=True):
+                from sankalp.tools.base import ToolResult
+
+                return ToolResult.run(
+                    "browser_search",
+                    {"query": query, "limit": limit, "include_content": include_content},
+                    {
+                        "engine": "test",
+                        "results": [{
+                            "title": "KV cache attention survey",
+                            "url": "https://example.test/kv-cache",
+                            "description": "GQA, MLA, KV quantization, and related mechanisms.",
+                            "markdown": "GQA, MLA, KV quantization, and cross-layer KV sharing reduce inference memory.",
+                        }],
+                    },
+                )
+
+            tools.browser_search = fake_browser_search
+            agent = Agent(SessionStore(root / "sessions"), memory, tools, SavePlannerLLM())
+
+            result = agent.turn(
+                None,
+                "search about the different attention mechanisms used since 2022 from the first GPT models till today that have improved KV caching memory during inference and document it under ML concepts",
+            )
+
+            self.assertEqual(result["tool_calls"][0]["name"], "browser_search")
+            self.assertEqual(result["tool_calls"][-1]["name"], "memory_remember")
+            self.assertTrue((vault / "ML&Agents" / "Concepts" / "kv-cache-attention-mechanisms-since-2022.md").exists())
+            self.assertIn("Saved to Obsidian at `ML&Agents/Concepts/kv-cache-attention-mechanisms-since-2022.md`.", result["message"]["content"])
+
     def test_save_target_without_llm_prefers_relevant_existing_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

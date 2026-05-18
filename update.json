@@ -1,9 +1,9 @@
 {
-  "version": "0.1.15",
+  "version": "0.1.16",
   "channel": "stable",
-  "title": "Multi-turn agentic tool use",
+  "title": "Introduce LLM-Guided Obsidian Save Planning",
   "notes": [
-    "improve Sankalp's ability to use tools multiple times to answer questions more accurately"
+    "Introduce LLM-Guided Obsidian Save Planning"
   ],
   "minimum_supported_version": "0.1.0"
 }

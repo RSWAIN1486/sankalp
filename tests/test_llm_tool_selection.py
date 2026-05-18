@@ -48,6 +48,15 @@ class LLMToolSelectionTests(unittest.TestCase):
         self.assertEqual(tool["arguments"]["query"], "insurance")
         self.assertEqual(answer["answer"], "Found the folder.")
 
+    def test_parse_memory_save_plan_accepts_content(self):
+        result = LLMAdapter()._parse_memory_save_plan(
+            '```json\n{"folder":"ML&Agents/Concepts","note":"Grouped Query Attention vs Multi-Head Latent Attention.md","content":"# Title\\n\\nBody"}\n```'
+        )
+
+        self.assertEqual(result["folder"], "ML&Agents/Concepts")
+        self.assertEqual(result["note"], "Grouped Query Attention vs Multi-Head Latent Attention.md")
+        self.assertEqual(result["content"], "# Title\n\nBody")
+
     def test_parse_memory_search_query_accepts_json(self):
         result = LLMAdapter()._parse_memory_search_query(
             '```json\n{"query":"stripe fraud detection radar algorithm"}\n```'

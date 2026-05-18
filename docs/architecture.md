@@ -80,8 +80,12 @@ assistant turns from providers with unusual streaming/reasoning output.
 accessibility-tree inspection, and explicit click/type/key actions. `/computer task ...` runs a
 bounded experimental loop that observes, asks the selected model for one structured action, checks
 policy, executes through the tool registry, and repeats until done/blocked/confirmed.
-- Memory flow: `/remember` and natural save intents write to Obsidian with routing/fallback logic;
-  explicit memory-find intents route through `memory_search` first.
+- Memory flow: `/remember` and explicit memory-find intents remain direct. Research/document
+  requests use a model-prepared Obsidian save plan (`folder`, `note`, and clean note `content`) so
+  the backend honors requested or generated paths such as `ML&Agents/Concepts/...` instead of
+  re-routing the final answer through a post-hoc folder heuristic. Combined intents such as
+  "search/research ... and document ..." are treated as web research plus save, not memory lookup,
+  even if an existing note matches the topic.
 - File flow: `/ls [path]` and `/find <name>` remain direct commands. Natural file/folder requests
   use the iterative planner loop so the model can search broadly, list promising folders, read
   follow-up files, and resolve references such as "it" or "that folder" from recent tool results.

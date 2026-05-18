@@ -128,6 +128,51 @@ class LLMAdapter:
             return None
         return self._parse_memory_save_target(str(result.get("text") or ""))
 
+    def prepare_memory_save(
+        self,
+        request: str,
+        answer: str,
+        folders: list[str],
+        existing_notes: list[str],
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, str] | None:
+        settings = self._settings_with_options(options or {})
+        provider = settings.get("provider", "local")
+        prompt = (
+            "Prepare an Obsidian save plan for this assistant result.\n"
+            "Return only JSON with this shape: {\"folder\":\"...\",\"note\":\"...md\",\"content\":\"...\"}.\n\n"
+            "Rules:\n"
+            "- Honor the user's requested folder/path exactly when provided.\n"
+            "- If the assistant answer names an intended Obsidian path, use that path exactly for folder and note.\n"
+            "- Choose the closest existing folder from the provided folder list when it matches the request.\n"
+            "- Preserve human-readable note titles in the note filename; .md is optional but preferred.\n"
+            "- content must be only the note body to save. Remove wrapper text like 'I drafted...' and remove any 'Saved to Obsidian...' line.\n"
+            "- If the answer contains a clean Markdown note draft, use that draft as content.\n"
+            "- Do not default to Inbox when a specific folder/path is visible in the request or answer.\n\n"
+            f"Existing folders:\n{json.dumps(folders[:200], ensure_ascii=False)}\n\n"
+            f"Existing notes:\n{json.dumps(existing_notes[:200], ensure_ascii=False)}\n\n"
+            f"User request:\n{request.strip()[:3000]}\n\n"
+            f"Assistant answer:\n{answer.strip()[:18000]}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            if provider == "local_openai":
+                result = self._local_openai(settings, messages, "")
+            elif provider == "gemini":
+                result = self._gemini(settings, messages, "")
+            elif provider == "codex":
+                result = self._codex(settings, messages, "")
+            elif provider == "openai":
+                api_key = settings.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return None
+                result = self._openai(api_key, settings, messages, "", None)
+            else:
+                return None
+        except Exception:
+            return None
+        return self._parse_memory_save_plan(str(result.get("text") or ""))
+
     def select_tool(self, message: str, tools: list[dict[str, Any]], options: dict[str, Any] | None = None) -> dict[str, Any] | None:
         settings = self._settings_with_options(options or {})
         provider = settings.get("provider", "local")
@@ -1146,6 +1191,33 @@ class LLMAdapter:
         if not note.lower().endswith(".md"):
             note += ".md"
         return {"folder": folder, "note": note}
+
+    def _parse_memory_save_plan(self, value: str) -> dict[str, str] | None:
+        text = value.strip()
+        fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.S)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start:end + 1]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        folder = str(data.get("folder") or "").strip().strip("/")
+        note = str(data.get("note") or "").strip()
+        content = str(data.get("content") or "").strip()
+        if len(folder) > 240 or len(note) > 180:
+            return None
+        if "/" in note or "\\" in note:
+            return None
+        if note and not note.lower().endswith(".md"):
+            note += ".md"
+        if not folder and not note and not content:
+            return None
+        return {"folder": folder, "note": note, "content": content}
 
     def _fallback(self, messages: list[dict[str, str]], memory_context: str) -> str:
         latest = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")

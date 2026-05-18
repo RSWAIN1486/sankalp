@@ -438,6 +438,8 @@ class Agent:
         explicit_save_verbs = ["save", "document", "remember", "store", "write down"]
         if any(word in lowered for word in ["obsidian", "vault"]) and any(word in lowered for word in explicit_save_verbs):
             return True
+        if self._is_research_document_request(lowered):
+            return True
         shorthand_patterns = [
             r"^\s*(save|document|store)\s+(it|this|that|them)\b",
             r"\b(can you|please)\s+(save|document|store)\s+(it|this|that|them)\b",
@@ -457,19 +459,29 @@ class Agent:
 
     def _should_auto_save_after_answer(self, content: str) -> bool:
         lowered = content.lower()
+        if self._is_research_document_request(lowered):
+            return True
         wants_save = self._is_obsidian_save_request(lowered)
         research_like = any(term in lowered for term in [
             "find", "explore", "research", "latest", "paper", "papers", "look up", "search",
         ])
         return wants_save and research_like
 
+    def _is_research_document_request(self, lowered: str) -> bool:
+        has_research = bool(re.search(r"\b(search|research|find|look up|lookup|explore)\b", lowered))
+        has_document = bool(re.search(r"\b(document|save|store|write down|write up|capture)\b", lowered))
+        return has_research and has_document
+
     def _is_web_research_request(self, lowered: str) -> bool:
         if lowered.startswith(("/research ", "/fetch ", "/read ", "/remember ", "/append ", "/sh ")):
             return False
+        if self._is_research_document_request(lowered):
+            return True
         if "memory" in lowered or "obsidian" in lowered and not any(term in lowered for term in ["find", "research", "latest", "papers"]):
             return False
         return bool(
             re.search(r"\b(find|research|look up|search)\b.*\b(latest|web|online|papers?|sources?|news|details?)\b", lowered)
+            or re.search(r"\b(search|research|look up|lookup|explore)\b\s+(about|into|for)\b", lowered)
             or re.search(r"\b(latest|recent)\b.*\b(papers?|news|sources?|research)\b", lowered)
         )
 
@@ -481,8 +493,11 @@ class Agent:
         return self._answer_web_research(query, result.output, options)
 
     def _save_answer_to_memory(self, session: Session, request_text: str, answer_text: str, options: dict[str, Any]) -> str | None:
-        note_text = self._memory_note_content_for_save(answer_text)
-        target = self._memory_save_target(request_text, note_text, options)
+        prepared = self._prepare_memory_save(request_text, answer_text, options)
+        note_text = prepared.get("content") or self._memory_note_content_for_save(answer_text)
+        target = {"folder": prepared.get("folder", ""), "note": prepared.get("note", "")}
+        if not target["folder"] and not target["note"]:
+            target = self._memory_save_target(request_text, note_text, options)
         result = self.tools.call(
             "memory_remember",
             text=note_text,
@@ -495,6 +510,21 @@ class Agent:
             return "I could not save the findings to Obsidian."
         target_path = result.output.get("target", {}).get("path") or result.output.get("path")
         return f"Saved to Obsidian at `{target_path}`."
+
+    def _prepare_memory_save(self, request_text: str, answer_text: str, options: dict[str, Any]) -> dict[str, str]:
+        folders = self.memory.folder_paths(max_depth=6)
+        note_paths = [item.get("path", "") for item in self.memory.notes(limit=160).get("notes", []) if item.get("path")]
+        preparer = getattr(self.llm, "prepare_memory_save", None)
+        if callable(preparer):
+            suggestion = preparer(request_text, answer_text, folders, note_paths, options)
+            if isinstance(suggestion, dict):
+                folder = str(suggestion.get("folder") or "").strip().strip("/")
+                note = str(suggestion.get("note") or "").strip()
+                content = str(suggestion.get("content") or "").strip()
+                if folder or note or content:
+                    folder = self._normalize_memory_folder(folder, f"{request_text}\n\n{answer_text}", folders)
+                    return {"folder": folder, "note": note, "content": content}
+        return {}
 
     def _memory_save_target(self, request_text: str, content_text: str, options: dict[str, Any]) -> dict[str, str]:
         explicit = self._explicit_memory_target(request_text) or self._explicit_memory_target(content_text)
@@ -512,10 +542,49 @@ class Agent:
                 folder = str(suggestion.get("folder") or "").strip()
                 note = str(suggestion.get("note") or "").strip()
                 if folder and folder.lower().strip("/") not in {"inbox", "sessions"}:
-                    target["folder"] = folder
+                    target["folder"] = self._normalize_memory_folder(folder, f"{request_text}\n\n{content_text}", folders)
                 if note:
                     target["note"] = note
         return target
+
+    def _normalize_memory_folder(self, proposed: str, context: str, folders: list[str]) -> str:
+        proposed = (proposed or "").strip().strip("/")
+        if not proposed:
+            return ""
+        candidates = [item.strip().strip("/") for item in folders if item and item.strip().strip("/")]
+        if not candidates:
+            return proposed
+
+        proposed_key = self._folder_match_key(proposed)
+        for folder in candidates:
+            if self._folder_match_key(folder) == proposed_key:
+                return folder
+
+        proposed_terms = self._memory_route_terms(proposed)
+        context_terms = self._memory_route_terms(context)
+        combined_terms = proposed_terms | context_terms
+        best_folder = ""
+        best_score = 0
+        for folder in candidates:
+            folder_terms = self._memory_route_terms(folder)
+            score = 0
+            score += 12 * len(proposed_terms & folder_terms)
+            score += self._folder_route_score(folder, combined_terms)
+            if self._folder_match_key(folder).endswith(proposed_key):
+                score += 10
+            if proposed_key and proposed_key in self._folder_match_key(folder):
+                score += 6
+            if score > best_score or (score == best_score and best_folder and len(folder) < len(best_folder)):
+                best_folder = folder
+                best_score = score
+        return best_folder if best_score >= 12 else proposed
+
+    def _folder_match_key(self, folder: str) -> str:
+        return "/".join(
+            "-".join(re.findall(r"[a-z0-9]+", part.lower()))
+            for part in folder.strip().strip("/").split("/")
+            if part.strip()
+        )
 
     def _memory_note_content_for_save(self, answer_text: str) -> str:
         text = (answer_text or "").strip()
